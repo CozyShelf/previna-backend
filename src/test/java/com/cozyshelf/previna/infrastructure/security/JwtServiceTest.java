@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -21,16 +22,25 @@ class JwtServiceTest {
     private final JwtService jwtService = new JwtService(SEGREDO, 60, 30);
 
     @ParameterizedTest
-    @CsvSource({"MEDICO, PT60M", "GESTANTE, P30D"})
-    void validadeDependeDoPerfil(Perfil perfil, Duration validade) {
+    @CsvSource({
+            "MEDICO, false, PT60M, MEDICO",
+            "GESTANTE, false, P30D, GESTANTE",
+            "GESTANTE, true, PT60M, PRIMEIRO_ACESSO",
+    })
+    void validadeEPapelDependemDoPerfilEDoPrimeiroAcesso(Perfil perfil, boolean primeiroAcessoPendente,
+                                                         Duration validade, String papel) {
         Usuario usuario = mock(Usuario.class);
         when(usuario.getId()).thenReturn(1L);
         when(usuario.getPerfil()).thenReturn(perfil);
+        when(usuario.primeiroAcessoPendente()).thenReturn(primeiroAcessoPendente);
+        String token = jwtService.gerarToken(usuario);
+
+        assertEquals(papel, jwtService.validarToken(token).papel());
 
         Instant expiracao = Jwts.parser()
                 .verifyWith(Keys.hmacShaKeyFor(SEGREDO.getBytes(StandardCharsets.UTF_8)))
                 .build()
-                .parseSignedClaims(jwtService.gerarToken(usuario))
+                .parseSignedClaims(token)
                 .getPayload()
                 .getExpiration()
                 .toInstant();

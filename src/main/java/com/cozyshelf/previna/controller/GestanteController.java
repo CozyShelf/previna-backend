@@ -4,6 +4,8 @@ import com.cozyshelf.previna.application.dto.request.PreCadastroGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.dto.response.CredenciaisTemporariasResponse;
 import com.cozyshelf.previna.application.dto.response.GestanteResumoResponse;
+import com.cozyshelf.previna.application.dto.response.TokenResponse;
+import com.cozyshelf.previna.application.service.AuthService;
 import com.cozyshelf.previna.application.service.GestanteService;
 import com.cozyshelf.previna.infrastructure.security.UsuarioAutenticado;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,9 +29,11 @@ import java.util.List;
 @Tag(name = "Gestantes")
 public class GestanteController {
     private final GestanteService gestanteService;
+    private final AuthService authService;
 
-    public GestanteController(GestanteService gestanteService) {
+    public GestanteController(GestanteService gestanteService, AuthService authService) {
         this.gestanteService = gestanteService;
+        this.authService = authService;
     }
 
     @GetMapping
@@ -49,13 +53,13 @@ public class GestanteController {
     }
 
     @PutMapping("/primeiro-acesso")
-    @PreAuthorize("hasRole('GESTANTE')")
-    @Operation(summary = "Troca as credenciais temporárias, registra os dados complementares e ativa a conta")
-    public ResponseEntity<Void> concluirPrimeiroAcesso(
+    @PreAuthorize("hasRole('PRIMEIRO_ACESSO')")
+    @Operation(summary = "Troca as credenciais temporárias, registra os dados complementares, ativa a conta e emite um novo token")
+    public ResponseEntity<TokenResponse> concluirPrimeiroAcesso(
             @RequestBody @Valid PrimeiroAcessoRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado gestante) {
         gestanteService.concluirPrimeiroAcesso(gestante.id(), dados);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(authService.renovarToken(gestante.id()));
     }
 
     @PutMapping("/tutorial-concluido")

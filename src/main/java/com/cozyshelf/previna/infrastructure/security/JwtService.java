@@ -17,6 +17,8 @@ import java.util.Date;
 @Service
 public class JwtService {
     private static final String CLAIM_PERFIL = "perfil";
+    private static final String CLAIM_PRIMEIRO_ACESSO = "primeiroAcesso";
+    public static final String PAPEL_PRIMEIRO_ACESSO = "PRIMEIRO_ACESSO";
 
     private final SecretKey chave;
     private final Duration expiracao;
@@ -32,11 +34,14 @@ public class JwtService {
 
     public String gerarToken(Usuario usuario) {
         Instant agora = Instant.now();
-        // shortcut: token longo e sem revogação (trocar a senha não derruba sessões abertas); usar refresh token quando precisar revogar
-        Duration validade = usuario.getPerfil() == Perfil.GESTANTE ? expiracaoGestante : expiracao;
+        // Com a senha temporária o token é curto e só conclui o primeiro acesso, que emite um token novo
+        boolean temporario = usuario.primeiroAcessoPendente();
+        // shortcut: token sem revogação (trocar a senha não derruba sessões abertas); adicionar versão de credencial no token quando houver troca de senha fora do primeiro acesso
+        Duration validade = usuario.getPerfil() == Perfil.GESTANTE && !temporario ? expiracaoGestante : expiracao;
         return Jwts.builder()
                 .subject(usuario.getId().toString())
                 .claim(CLAIM_PERFIL, usuario.getPerfil().name())
+                .claim(CLAIM_PRIMEIRO_ACESSO, temporario)
                 .issuedAt(Date.from(agora))
                 .expiration(Date.from(agora.plus(validade)))
                 .signWith(chave)
@@ -49,6 +54,9 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-        return new UsuarioAutenticado(Long.valueOf(claims.getSubject()), claims.get(CLAIM_PERFIL, String.class));
+        String papel = Boolean.TRUE.equals(claims.get(CLAIM_PRIMEIRO_ACESSO, Boolean.class))
+                ? PAPEL_PRIMEIRO_ACESSO
+                : claims.get(CLAIM_PERFIL, String.class);
+        return new UsuarioAutenticado(Long.valueOf(claims.getSubject()), papel);
     }
 }

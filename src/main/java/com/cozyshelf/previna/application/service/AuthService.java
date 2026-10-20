@@ -28,6 +28,16 @@ public class AuthService {
         Usuario usuario = usuarioRepository.findByLogin(dados.login())
                 .filter(u -> passwordEncoder.matches(dados.senha(), u.getSenhaHash()))
                 .orElseThrow(() -> new BadCredentialsException("Login ou senha inválidos"));
+        return emitirToken(usuario);
+    }
+
+    // Depois do primeiro acesso: o token anterior só servia para trocar as credenciais temporárias
+    @Transactional(readOnly = true)
+    public TokenResponse renovarToken(Long idUsuario) {
+        return emitirToken(usuarioRepository.findById(idUsuario).orElseThrow());
+    }
+
+    private TokenResponse emitirToken(Usuario usuario) {
         boolean tutorialPendente = usuario instanceof Gestante gestante && gestante.tutorialPendente();
         return new TokenResponse(jwtService.gerarToken(usuario), usuario.primeiroAcessoPendente(), tutorialPendente);
     }

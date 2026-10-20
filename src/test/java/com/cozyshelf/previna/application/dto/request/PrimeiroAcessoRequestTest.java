@@ -20,6 +20,8 @@ class PrimeiroAcessoRequestTest {
             "maria.silva, 12345678, true, , , false",
             "maria.silva, abc123, true, , , false",
             "ma, senha123, true, , , false",
+            "12345678909, senha123, true, , , false",
+            "maria2024, senha123, true, , , true",
             "maria silva, senha123, true, , , false",
             "maria.silva, senha123, false, , , false",
             "maria.silva, senha123, true, -1, , false",
