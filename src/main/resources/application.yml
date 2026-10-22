@@ -28,7 +28,9 @@ previna:
   security:
     jwt:
       secret: ${JWT_SECRET:troque-este-segredo-em-producao-com-no-minimo-32-bytes}
-      expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:480}
+      expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:60}
+      # Sessão do app mobile fica salva no celular
+      expiracao-gestante-dias: ${JWT_EXPIRACAO_GESTANTE_DIAS:30}
 
 springdoc:
   swagger-ui:
