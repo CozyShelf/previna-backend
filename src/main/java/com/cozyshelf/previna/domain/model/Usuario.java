@@ -4,10 +4,11 @@ import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
 
+// Concreta: o administrador é só um usuário, sem tabela própria
 @Entity
 @Table(name = "usuario")
 @Inheritance(strategy = InheritanceType.JOINED)
-public abstract class Usuario {
+public class Usuario {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

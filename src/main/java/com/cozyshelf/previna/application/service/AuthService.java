@@ -1,8 +1,11 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.LoginRequest;
+import com.cozyshelf.previna.application.dto.response.PerfilResponse;
 import com.cozyshelf.previna.application.dto.response.TokenResponse;
+import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Usuario;
 import com.cozyshelf.previna.domain.repository.UsuarioRepository;
 import com.cozyshelf.previna.infrastructure.security.JwtService;
@@ -35,6 +38,14 @@ public class AuthService {
     @Transactional(readOnly = true)
     public TokenResponse renovarToken(Long idUsuario) {
         return emitirToken(usuarioRepository.findById(idUsuario).orElseThrow());
+    }
+
+    @Transactional(readOnly = true)
+    public PerfilResponse buscarPerfil(Long idUsuario) {
+        Usuario usuario = usuarioRepository.findById(idUsuario).orElseThrow();
+        return new PerfilResponse(usuario.getNome(), usuario.getEmail(), usuario.getLogin(),
+                usuario instanceof Medico medico ? medico.getCrm() : null,
+                usuario instanceof EmpresaParceira empresa ? empresa.getCnpj() : null);
     }
 
     private TokenResponse emitirToken(Usuario usuario) {
