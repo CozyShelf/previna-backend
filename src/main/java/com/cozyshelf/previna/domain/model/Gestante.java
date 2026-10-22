@@ -37,6 +37,10 @@ public class Gestante extends Usuario {
         this.dataProvavelParto = dum.plusDays(DIAS_GESTACAO);
     }
 
+    public Medico getMedico() {
+        return medico;
+    }
+
     public String getTelefone() {
         return telefone;
     }
@@ -60,5 +64,10 @@ public class Gestante extends Usuario {
 
     public void concluirTutorial() {
         this.tutorialConcluido = true;
+    }
+
+    public void atualizarContato(String telefone, String email) {
+        this.telefone = telefone;
+        alterarEmail(email);
     }
 }

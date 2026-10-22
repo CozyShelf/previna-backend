@@ -18,6 +18,11 @@ spring:
     locations: classpath:db/migration
   jackson:
     default-property-inclusion: non_null
+  # Logo da empresa e foto da gestante (o nginx de dev e prod aceita até 10 MB)
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
   # Padrão: MailHog do ambiente de desenvolvimento (previna-development)
   mail:
     host: ${MAIL_HOST:localhost}
