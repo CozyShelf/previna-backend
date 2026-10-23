@@ -1,2 +1,11 @@
 server:
   forward-headers-strategy: framework
+spring:
+  mail:
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true

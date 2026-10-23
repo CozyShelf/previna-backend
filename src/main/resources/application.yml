@@ -18,6 +18,24 @@ spring:
     locations: classpath:db/migration
   jackson:
     default-property-inclusion: non_null
+  # Logo da empresa e foto da gestante (o nginx de dev e prod aceita até 10 MB)
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
+  # Padrão: MailHog do ambiente de desenvolvimento (previna-development)
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USER:}
+    password: ${MAIL_PASSWORD:}
+    # Sem timeout o envio travaria a requisição (e a transação) se o SMTP não responder
+    properties:
+      mail:
+        smtp:
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -31,6 +49,10 @@ previna:
       expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:60}
       # Sessão do app mobile fica salva no celular
       expiracao-gestante-dias: ${JWT_EXPIRACAO_GESTANTE_DIAS:30}
+  email:
+    remetente: ${MAIL_FROM:Previna <nao-responda@previna.com.br>}
+    # Vai no e-mail de pré-login da empresa parceira
+    url-portal: ${PORTAL_URL:http://localhost}
 
 springdoc:
   swagger-ui:

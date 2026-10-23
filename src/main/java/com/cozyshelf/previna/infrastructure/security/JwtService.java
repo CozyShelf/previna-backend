@@ -36,7 +36,7 @@ public class JwtService {
         Instant agora = Instant.now();
         // Com a senha temporária o token é curto e só conclui o primeiro acesso, que emite um token novo
         boolean temporario = usuario.primeiroAcessoPendente();
-        // shortcut: token sem revogação (trocar a senha não derruba sessões abertas); adicionar versão de credencial no token quando houver troca de senha fora do primeiro acesso
+        // shortcut: token sem revogação (quando o administrador troca a senha de um médico, as sessões abertas valem até expirar); adicionar versão de credencial no token quando for preciso derrubá-las na hora
         Duration validade = usuario.getPerfil() == Perfil.GESTANTE && !temporario ? expiracaoGestante : expiracao;
         return Jwts.builder()
                 .subject(usuario.getId().toString())

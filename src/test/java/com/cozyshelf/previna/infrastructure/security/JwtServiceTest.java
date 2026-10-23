@@ -26,6 +26,8 @@ class JwtServiceTest {
             "MEDICO, false, PT60M, MEDICO",
             "GESTANTE, false, P30D, GESTANTE",
             "GESTANTE, true, PT60M, PRIMEIRO_ACESSO",
+            "EMPRESA_PARCEIRA, false, PT60M, EMPRESA_PARCEIRA",
+            "EMPRESA_PARCEIRA, true, PT60M, PRIMEIRO_ACESSO",
     })
     void validadeEPapelDependemDoPerfilEDoPrimeiroAcesso(Perfil perfil, boolean primeiroAcessoPendente,
                                                          Duration validade, String papel) {

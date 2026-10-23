@@ -4,10 +4,11 @@ import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
 
+// Concreta: o administrador é só um usuário, sem tabela própria
 @Entity
 @Table(name = "usuario")
 @Inheritance(strategy = InheritanceType.JOINED)
-public abstract class Usuario {
+public class Usuario {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -70,6 +71,21 @@ public abstract class Usuario {
 
     public boolean primeiroAcessoPendente() {
         return statusConta == StatusConta.PRIMEIRO_ACESSO_PENDENTE;
+    }
+
+    protected void alterarEmail(String email) {
+        this.email = email;
+    }
+
+    protected void alterarDados(String nome, String cpf, String email, String login) {
+        this.nome = nome;
+        this.cpf = cpf;
+        this.email = email;
+        this.login = login;
+    }
+
+    public void alterarSenha(String senhaHash) {
+        this.senhaHash = senhaHash;
     }
 
     public void concluirPrimeiroAcesso(String login, String senhaHash) {

@@ -1,0 +1,53 @@
+@startuml cadastro-medico
+title Cadastro de Médico (Admin)
+autonumber
+
+actor "Admin" as Admin
+boundary "Tela de Cadastro\nde Médico" as Tela
+control "MedicoController" as Controller
+participant "MedicoService" as Service
+database "Banco de Dados" as BD
+
+note over Admin, Controller
+    Requer usuário autenticado com perfil ADMIN.
+    Requisições de outros perfis recebem 403 Forbidden.
+end note
+
+Admin -> Tela : Acessa "Cadastrar médico"
+Tela --> Admin : Exibe formulário de cadastro
+Admin -> Tela : Informa dados (nome, CPF, CRM, e-mail),\nacesso (login, senha e confirmação) e a permissão\n"Ver todas as gestantes" (opcional)
+
+alt dados inválidos na tela (campo obrigatório ausente, CPF inválido,\nlogin ou senha fora das regras, senhas diferentes)
+    Tela --> Admin : Exibe os erros de validação, sem enviar
+else dados válidos na tela
+    Tela -> Controller : POST /medicos
+
+    alt dados inválidos (as mesmas regras, conferidas de novo no servidor)
+        Controller --> Tela : 400 Bad Request
+        Tela --> Admin : Exibe mensagem para conferir os campos
+    else dados válidos
+        Controller -> Service : cadastrar(dados)
+        Service -> BD : verificarDisponibilidade(cpf, crm, email, login)
+        BD --> Service : resultado
+
+        alt CPF, CRM, e-mail ou login já em uso
+            Service --> Controller : Erro: CPF ou CRM já cadastrado,\ne-mail já cadastrado ou login indisponível
+            Controller --> Tela : 409 Conflict
+            Tela --> Admin : Exibe "Já existe um cadastro com este\nCPF, CRM, e-mail ou login."
+        else todos disponíveis
+            Service -> BD : salvarMedico(dados, hash da senha, perfil = MEDICO,\nstatus = ATIVA, verTodasGestantes)
+            BD --> Service : médico salvo
+            Service --> Controller : dados do médico (sem a senha)
+            Controller --> Tela : 201 Created
+            Tela --> Admin : Volta para a lista de médicos com\n"<nome> cadastrado. Repasse o login e a senha ao médico."
+            note right of Admin
+                O médico entra direto com o login e a senha
+                definidos pelo admin: não há primeiro acesso.
+                Só o admin troca a senha depois, na edição
+                do médico (PUT /medicos/{id}).
+            end note
+        end
+    end
+end
+
+@enduml
