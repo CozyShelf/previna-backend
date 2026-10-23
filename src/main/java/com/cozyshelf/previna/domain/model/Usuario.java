@@ -73,6 +73,21 @@ public class Usuario {
         return statusConta == StatusConta.PRIMEIRO_ACESSO_PENDENTE;
     }
 
+    protected void alterarEmail(String email) {
+        this.email = email;
+    }
+
+    protected void alterarDados(String nome, String cpf, String email, String login) {
+        this.nome = nome;
+        this.cpf = cpf;
+        this.email = email;
+        this.login = login;
+    }
+
+    public void alterarSenha(String senhaHash) {
+        this.senhaHash = senhaHash;
+    }
+
     public void concluirPrimeiroAcesso(String login, String senhaHash) {
         this.login = login;
         this.senhaHash = senhaHash;

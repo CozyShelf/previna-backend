@@ -43,9 +43,13 @@ public class AuthService {
     @Transactional(readOnly = true)
     public PerfilResponse buscarPerfil(Long idUsuario) {
         Usuario usuario = usuarioRepository.findById(idUsuario).orElseThrow();
+        EmpresaParceira empresa = usuario instanceof EmpresaParceira e ? e : null;
+        Medico medico = usuario instanceof Medico m ? m : null;
         return new PerfilResponse(usuario.getNome(), usuario.getEmail(), usuario.getLogin(),
-                usuario instanceof Medico medico ? medico.getCrm() : null,
-                usuario instanceof EmpresaParceira empresa ? empresa.getCnpj() : null);
+                medico != null ? medico.getCrm() : null,
+                empresa != null ? empresa.getCnpj() : null,
+                empresa != null ? empresa.getLogoUrl() : null,
+                medico != null ? medico.podeVerTodasGestantes() : null);
     }
 
     private TokenResponse emitirToken(Usuario usuario) {

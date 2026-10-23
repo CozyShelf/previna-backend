@@ -12,6 +12,10 @@ public class EmpresaParceira extends Usuario {
     private String cnpj;
     private String telefone;
     private String responsavel;
+    private String endereco;
+    private String logoUrl;
+    private String descricao;
+    private String segmento;
 
     protected EmpresaParceira() {
     }
@@ -39,5 +43,37 @@ public class EmpresaParceira extends Usuario {
 
     public String getResponsavel() {
         return responsavel;
+    }
+
+    public String getEndereco() {
+        return endereco;
+    }
+
+    public String getSegmento() {
+        return segmento;
+    }
+
+    public String getDescricao() {
+        return descricao;
+    }
+
+    public String getLogoUrl() {
+        return logoUrl;
+    }
+
+    public void completarCadastro(String endereco, String descricao, String segmento) {
+        this.endereco = endereco;
+        this.descricao = descricao;
+        this.segmento = segmento;
+    }
+
+    public void atualizarContato(String email, String telefone, String responsavel) {
+        alterarEmail(email);
+        this.telefone = telefone;
+        this.responsavel = responsavel;
+    }
+
+    public void alterarLogo(String logoUrl) {
+        this.logoUrl = logoUrl;
     }
 }

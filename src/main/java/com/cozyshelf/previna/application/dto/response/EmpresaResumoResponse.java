@@ -7,5 +7,6 @@ public record EmpresaResumoResponse(
         String email,
         String telefone,
         String responsavel,
+        String logoUrl,
         boolean primeiroAcessoPendente
 ) {}

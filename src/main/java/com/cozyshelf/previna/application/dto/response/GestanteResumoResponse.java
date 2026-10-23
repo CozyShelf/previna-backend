@@ -9,5 +9,7 @@ public record GestanteResumoResponse(
         String telefone,
         LocalDate dum,
         LocalDate dataProvavelParto,
-        boolean primeiroAcessoPendente
+        boolean primeiroAcessoPendente,
+        // Nome do médico responsável
+        String medico
 ) {}
