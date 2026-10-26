@@ -15,7 +15,7 @@ public final class Filtros {
     private Filtros() {
     }
 
-    // Trecho de algum dos campos, sem diferenciar maiúsculas nem acentos; termo só de números também procura no documento
+    // Trecho de algum dos campos, sem diferenciar maiúsculas nem acentos; termo só de números também procura no documento, quando há
     // shortcut: like '%termo%' percorre a tabela inteira; criar índice trigram (pg_trgm) quando passar de dezenas de milhares de registros
     public static <T> Specification<T> busca(String termo, String campoDocumento, String... camposTexto) {
         return (raiz, consulta, cb) -> {
@@ -29,7 +29,7 @@ public final class Filtros {
                 alternativas.add(cb.like(semAcento(cb, cb.lower(raiz.get(campo))), padrao));
             }
             String digitos = limpo.replaceAll("\\D", "");
-            if (limpo.matches(SO_NUMEROS) && !digitos.isEmpty()) {
+            if (campoDocumento != null && limpo.matches(SO_NUMEROS) && !digitos.isEmpty()) {
                 alternativas.add(cb.like(raiz.get(campoDocumento), "%" + digitos + "%"));
             }
             return cb.or(alternativas.toArray(Predicate[]::new));
