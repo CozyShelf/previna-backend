@@ -1,0 +1,58 @@
+@startuml confirmacao-pontos
+title Confirmação de exame ou consulta e crédito de pontos (previsto)
+
+|AgendamentoController|
+start
+:PUT /agendamentos/{id}/confirmar
+@PreAuthorize MEDICO;
+
+|AgendamentoService|
+:busca o agendamento pelo id e pelo médico do token
+(gestante acompanhada por ele), com o tipo de atendimento;
+if (não encontrado?) then (sim)
+  |AgendamentoController|
+  :404 Not Found;
+  stop
+else (não)
+endif
+
+|AgendamentoService|
+if (status diferente de AGENDADO
+(já REALIZADO ou CANCELADO)?) then (sim)
+  |AgendamentoController|
+  :409 Conflict;
+  stop
+else (não)
+endif
+
+|AgendamentoService|
+:status = REALIZADO
+confirmado_por = médico autenticado
+data_confirmacao = agora;
+
+|PontuacaoService|
+:pontos = arredondar(tipo_atendimento.pontos_base
+× dados_socioeconomicos.fator_ponderacao)
+(fator 1,00 sem dados socioeconômicos);
+:insere transacao_pontos
+(tipo = CREDITO, pontos, fator_aplicado, agendamento);
+:gestante.saldo_pontos += pontos;
+
+|AgendamentoService|
+:insere log_auditoria
+(médico, agendamento, transação,
+evento = AGENDAMENTO_CONFIRMADO);
+
+|AgendamentoController|
+:200 OK;
+stop
+
+note right
+  Status, transação de pontos, saldo e log
+  na mesma transação (@Transactional):
+  ou tudo é gravado, ou nada.
+  O cadastro do agendamento
+  (POST /agendamentos) não credita pontos.
+end note
+
+@enduml

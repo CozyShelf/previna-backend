@@ -1,0 +1,66 @@
+@startuml empresa
+!pragma layout smetana
+left to right direction
+skinparam usecase {
+  BackgroundColor #EAF7F1
+  BorderColor #2E8B6B
+}
+
+actor "Admin" as Admin
+actor "Empresa Parceira" as Empresa
+
+rectangle "Previna - Empresa Parceira" {
+  usecase "Cadastrar Empresa\nParceira" as CadastrarEmpresa
+  usecase "Realizar Primeiro Acesso" as PrimeiroAcesso
+  usecase "Gerenciar Produtos" as GerenciarProdutos
+  usecase "Gerenciar Promoções" as GerenciarPromocoes
+  usecase "Gerenciar Cupons" as GerenciarCupons
+  usecase "Validar Cupom" as ValidarCupom
+  usecase "Gerar Login e Senha\nTemporários" as GerarCredenciais
+  usecase "Visualizar Tutorial\nde Uso" as Tutorial
+  usecase "Alterar Login e Senha" as AlterarCredenciais
+  usecase "Complementar Dados\nde Cadastro" as Complementar
+  usecase "Cadastrar Produto" as CadastrarProduto
+  usecase "Editar Produto" as EditarProduto
+  usecase "Cadastrar Promoção" as CadastrarPromocao
+  usecase "Cadastrar Cupom" as CadastrarCupom
+  usecase "Ativar ou Desativar\nCupom" as AtivarCupom
+  usecase "Realizar Login" as Login
+}
+
+Admin --> CadastrarEmpresa
+Empresa --> PrimeiroAcesso
+Empresa --> GerenciarProdutos
+Empresa --> GerenciarPromocoes
+Empresa --> GerenciarCupons
+Empresa --> ValidarCupom
+
+CadastrarEmpresa ..> GerarCredenciais : <<include>>
+PrimeiroAcesso ..> Tutorial : <<include>>
+PrimeiroAcesso ..> AlterarCredenciais : <<include>>
+PrimeiroAcesso ..> Complementar : <<include>>
+GerenciarProdutos ..> CadastrarProduto : <<include>>
+GerenciarProdutos ..> EditarProduto : <<include>>
+GerenciarPromocoes ..> CadastrarPromocao : <<include>>
+GerenciarCupons ..> CadastrarCupom : <<include>>
+GerenciarCupons ..> AtivarCupom : <<include>>
+GerenciarProdutos ..> Login : <<include>>
+GerenciarPromocoes ..> Login : <<include>>
+GerenciarCupons ..> Login : <<include>>
+ValidarCupom ..> Login : <<include>>
+
+note right of Login
+  Login e senha próprios da empresa parceira.
+end note
+
+legend bottom left
+  **Cadastrar Empresa Parceira:** o usuário interno do Previna realiza o pré-cadastro da empresa.
+  O sistema gera a senha temporária, e o login temporário é o CNPJ; os dois são enviados por e-mail.
+  **Realizar Primeiro Acesso:** pré-condição: empresa cadastrada pelo usuário interno. Ocorre com as
+  credenciais temporárias; após a troca e o complemento do cadastro, o tutorial é exibido.
+  **Validar Cupom:** a validação do cupom resgatado pela gestante é feita pela própria empresa parceira.
+  **Promoções e cupons:** a promoção vale para uma categoria (fraldas, roupas ou remédios);
+  o cupom vale para um produto específico.
+endlegend
+
+@enduml

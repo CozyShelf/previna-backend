@@ -1,0 +1,42 @@
+@startuml gestante
+!pragma layout smetana
+skinparam usecase {
+  BackgroundColor #EEF6FF
+  BorderColor #2F5FB3
+}
+
+actor "Gestante" as Gestante
+
+rectangle "Previna - Módulo Gestante" {
+  usecase "Acessar Informações\nEducativas sobre Pré-natal" as Educativas
+  usecase "Visualizar Cupons\nResgatados" as Resgatados
+  usecase "Consultar Pontuação" as Pontuacao
+  usecase "Visualizar Cupons\nDisponíveis" as Disponiveis
+  usecase "Resgatar Cupom" as Resgatar
+  usecase "Visualizar Pontos\nGanhos e Gastos" as Extrato
+  usecase "Debitar Pontos" as Debitar
+  usecase "Verificar Saldo\nde Pontos" as Saldo
+}
+
+Gestante --> Educativas
+Gestante --> Resgatados
+Gestante --> Pontuacao
+Gestante --> Disponiveis
+
+Resgatar ..> Debitar : <<include>>
+Resgatar ..> Saldo : <<include>>
+Resgatar ..> Disponiveis : <<extend>>
+Extrato ..> Pontuacao : <<extend>>
+
+note right of Pontuacao
+  Os pontos são creditados somente
+  após o médico confirmar a realização
+  da consulta ou exame.
+end note
+
+note bottom of Disponiveis
+  Cupons de desconto em produtos específicos,
+  cadastrados e ativados pelas empresas parceiras.
+end note
+
+@enduml

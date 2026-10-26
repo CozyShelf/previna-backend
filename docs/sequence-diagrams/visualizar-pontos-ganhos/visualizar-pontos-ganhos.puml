@@ -1,0 +1,38 @@
+@startuml visualizar-pontos-ganhos
+title Visualizar Pontos Ganhos e Gastos (Gestante)
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Previna" as App
+control "PontuacaoController" as Controller
+participant "PontuacaoService" as Service
+database "Banco de Dados" as BD
+
+note over Gestante, Controller
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
+    A gestante vem do token, não do caminho: uma gestante não vê o extrato de outra.
+end note
+
+Gestante -> App : Acessa "Extrato de Pontos"
+App -> Controller : GET /gestantes/extrato
+Controller -> Service : gerarExtrato(idGestante do token)
+Service -> BD : listarTransacoes(idGestante)
+BD --> Service : transações (CREDITO e DEBITO)
+Service -> Service : calcularTotalGanho()
+Service -> Service : calcularTotalGasto()
+Service --> Controller : extrato (totais + histórico)
+Controller --> App : 200 OK
+App --> Gestante : Exibe total ganho, total gasto e histórico
+
+opt Gestante aplica filtro
+    Gestante -> App : Seleciona período ou tipo (ganhos/gastos)
+    App -> Controller : GET /gestantes/extrato?tipo=&inicio=&fim=
+    Controller -> Service : gerarExtrato(idGestante do token, filtros)
+    Service -> BD : listarTransacoes(idGestante, filtros)
+    BD --> Service : transações filtradas
+    Service --> Controller : extrato filtrado
+    Controller --> App : 200 OK
+    App --> Gestante : Exibe extrato filtrado
+end
+
+@enduml

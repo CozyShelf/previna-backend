@@ -1,0 +1,56 @@
+@startuml publicar-conteudo-educativo
+title Cadastrar e Publicar Conteúdo Educativo (Admin)
+autonumber
+
+actor "Admin" as Admin
+boundary "Tela de Conteúdos\nEducativos" as Tela
+control "ConteudoController" as Controller
+participant "ConteudoService" as Service
+database "Banco de Dados" as BD
+
+note over Admin, Controller
+    Requer usuário autenticado com perfil ADMIN; outros perfis recebem 403 Forbidden.
+    O autor do conteúdo é o admin do token.
+end note
+
+Admin -> Tela : Acessa "Novo conteúdo"
+Tela --> Admin : Exibe formulário
+Admin -> Tela : Informa título, corpo e categoria
+
+alt dados inválidos (título ou corpo ausente)
+    Tela --> Admin : Exibe os erros no formulário, sem enviar
+else dados válidos
+    Tela -> Controller : POST /conteudos (titulo, corpo, categoria)
+    Controller -> Service : cadastrar(dados, idAdmin do token)
+    Service -> BD : salvarConteudo(autor_id = idAdmin, titulo, corpo,\ncategoria, publicado = false)
+    BD --> Service : conteúdo salvo
+    Service --> Controller : conteúdo
+    Controller --> Tela : 201 Created
+    Tela --> Admin : Exibe "Rascunho salvo" com a opção de publicar
+end
+
+== Publicar ou despublicar ==
+
+Admin -> Tela : Clica em "Publicar" (ou "Despublicar")
+Tela -> Controller : PUT /conteudos/{id}/publicado (publicado)
+Controller -> Service : alterarPublicacao(idConteudo, publicado)
+Service -> BD : buscarConteudo(idConteudo)
+BD --> Service : resultado
+
+alt conteúdo inexistente
+    Service --> Controller : Erro: conteúdo não encontrado
+    Controller --> Tela : 404 Not Found
+    Tela --> Admin : Exibe "Conteúdo não encontrado"
+else conteúdo encontrado
+    Service -> BD : atualizarPublicacao(idConteudo, publicado,\npublicado_em = agora ao publicar)
+    Service --> Controller : conteúdo
+    Controller --> Tela : 200 OK
+    Tela --> Admin : Mostra a nova situação (Publicado/Rascunho)
+end
+
+note over Admin, BD
+    Só os conteúdos publicados aparecem para a gestante (ver conteudos-educativos);
+    despublicar tira o conteúdo do app sem apagá-lo.
+end note
+
+@enduml

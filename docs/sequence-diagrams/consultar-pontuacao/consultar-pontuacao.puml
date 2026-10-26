@@ -1,0 +1,27 @@
+@startuml consultar-pontuacao
+title Consultar Pontuação (Gestante)
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Previna" as App
+control "PontuacaoController" as Controller
+participant "PontuacaoService" as Service
+database "Banco de Dados" as BD
+
+note over Gestante, Controller
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
+    A gestante vem do token, não do caminho: uma gestante não vê a pontuação de outra.
+end note
+
+Gestante -> App : Acessa "Minha Pontuação"
+App -> Controller : GET /gestantes/pontuacao
+Controller -> Service : consultarPontuacao(idGestante do token)
+Service -> BD : buscarSaldo(idGestante)
+BD --> Service : saldo atual
+Service -> BD : listarAgendamentosRealizados(idGestante)
+BD --> Service : consultas/exames confirmados com pontos
+Service --> Controller : saldo + atividades pontuadas
+Controller --> App : 200 OK
+App --> Gestante : Exibe saldo e consultas/exames que geraram pontos
+
+@enduml

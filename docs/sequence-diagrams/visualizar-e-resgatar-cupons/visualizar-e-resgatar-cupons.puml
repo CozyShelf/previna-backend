@@ -1,0 +1,66 @@
+@startuml visualizar-e-resgatar-cupons
+title Visualizar e Resgatar Cupons (Gestante)
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Previna" as App
+control "CupomController" as Controller
+participant "CupomService" as Service
+participant "PontuacaoService" as Pontuacao
+database "Banco de Dados" as BD
+
+note over Gestante, Controller
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
+    A gestante vem do token, não do caminho.
+end note
+
+Gestante -> App : Acessa "Cupons Disponíveis"
+App -> Controller : GET /cupons/disponiveis
+Controller -> Service : listarCuponsDisponiveis()
+Service -> BD : buscarCupons(ativos, dentro da validade)
+BD --> Service : lista de cupons
+Service --> Controller : lista de cupons
+Controller --> App : 200 OK
+App --> Gestante : Exibe cupons (empresa, produto, desconto, custo em pontos)
+
+Gestante -> App : Seleciona cupom e solicita resgate
+App --> Gestante : Solicita confirmação
+Gestante -> App : Confirma resgate
+App -> Controller : POST /cupons/{id}/resgatar
+Controller -> Service : resgatarCupom(idCupom, idGestante do token)
+Service -> BD : buscarCupom(idCupom)
+BD --> Service : cupom
+Service -> Pontuacao : consultarSaldo(idGestante)
+Pontuacao --> Service : saldo
+
+alt cupom inexistente
+    Service --> Controller : Erro: cupom não encontrado
+    Controller --> App : 404 Not Found
+    App --> Gestante : Exibe "Cupom não encontrado"
+else cupom desativado pela empresa ou fora da validade
+    Service --> Controller : Erro: cupom indisponível
+    Controller --> App : 409 Conflict
+    App --> Gestante : Exibe "Cupom indisponível"
+else saldo menor que os pontos necessários
+    Service --> Controller : Erro: pontos insuficientes
+    Controller --> App : 409 Conflict
+    App --> Gestante : Exibe "Pontos insuficientes"
+else resgate válido
+    Service -> Service : gerarCodigoUnico()
+    Service -> BD : salvarCupomResgatado(idGestante, idCupom, codigo, status = ATIVO)
+    BD --> Service : cupom resgatado
+    Service -> Pontuacao : debitarPontos(idGestante, pontosNecessarios, idCupomResgatado)
+    Pontuacao -> BD : registrarTransacao(tipo = DEBITO, pontos, idCupomResgatado)
+    Pontuacao -> BD : atualizarSaldo(idGestante, -pontos)
+    Pontuacao --> Service : novo saldo
+    Service --> Controller : cupom resgatado + código
+    Controller --> App : 201 Created
+    App --> Gestante : Exibe código do cupom e novo saldo
+end
+
+note over Gestante, BD
+    Débito, transação e cupom resgatado na mesma transação, com a gestante bloqueada (SELECT ... FOR UPDATE):
+    dois resgates simultâneos não passam do saldo. O cupom não tem quantidade: a empresa o tira do ar desativando-o.
+end note
+
+@enduml

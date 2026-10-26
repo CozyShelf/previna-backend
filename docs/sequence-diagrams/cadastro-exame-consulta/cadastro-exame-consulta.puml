@@ -1,0 +1,58 @@
+@startuml cadastro-exame-consulta
+title Cadastro de Exame / Consulta da Gestante (Médico)
+autonumber
+
+actor "Médico" as Medico
+boundary "Tela de Cadastro\nde Exame/Consulta" as Tela
+control "AgendamentoController" as Controller
+participant "AgendamentoService" as Service
+database "Banco de Dados" as BD
+
+Medico -> Tela : Seleciona a gestante e acessa\n"Cadastrar Exame" ou "Cadastrar Consulta"
+Tela -> Controller : GET /tipos-atendimento?categoria={EXAME|CONSULTA}
+Controller -> Service : listarTiposAtivos(categoria)
+Service -> BD : buscarTiposAtendimento(categoria, ativo = true)
+BD --> Service : tipos de atendimento
+Service --> Controller : tipos de atendimento
+Controller --> Tela : 200 OK
+Tela --> Medico : Exibe formulário com os tipos disponíveis
+
+Medico -> Tela : Informa tipo, data prevista e observação
+Tela -> Controller : POST /agendamentos\n(idGestante, idTipoAtendimento, dataPrevista, observacao)
+
+alt dados inválidos (campo obrigatório ausente ou data prevista no passado)
+    Controller --> Tela : 400 Bad Request
+    Tela --> Medico : Exibe os erros de validação
+else dados válidos
+    Controller -> Service : agendar(dados, idMedico)
+    Service -> BD : buscarGestante(idGestante, idMedico)
+    BD --> Service : resultado
+
+    alt gestante não encontrada ou não acompanhada pelo médico
+        Service --> Controller : Erro: gestante não encontrada
+        Controller --> Tela : 404 Not Found
+        Tela --> Medico : Exibe mensagem "Gestante não encontrada"
+    else gestante encontrada
+        Service -> BD : buscarTipoAtendimento(idTipoAtendimento)
+        BD --> Service : resultado
+
+        alt tipo inexistente ou inativo
+            Service --> Controller : Erro: tipo de atendimento inválido
+            Controller --> Tela : 400 Bad Request
+            Tela --> Medico : Exibe mensagem "Tipo de atendimento inválido"
+        else tipo válido
+            Service -> BD : salvarAgendamento(gestante, tipo, atribuidoPor = idMedico,\ndataPrevista, observacao, status = AGENDADO)
+            BD --> Service : agendamento salvo
+            Service -> BD : registrarLog(idMedico, agendamento, evento = AGENDAMENTO_CRIADO)
+            Service --> Controller : agendamento
+            Controller --> Tela : 201 Created
+            Tela --> Medico : Exibe "Exame/Consulta cadastrado" na agenda da gestante
+            note over Medico, Service
+                Nenhum ponto é creditado aqui: os pontos do tipo de atendimento
+                só são gerados quando o médico confirmar a realização.
+            end note
+        end
+    end
+end
+
+@enduml

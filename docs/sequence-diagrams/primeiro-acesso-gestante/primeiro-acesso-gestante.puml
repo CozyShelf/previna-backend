@@ -1,0 +1,79 @@
+@startuml primeiro-acesso-gestante
+title Primeiro Acesso da Gestante
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Previna" as App
+control "AuthController" as AuthController
+participant "AuthService" as AuthService
+control "GestanteController" as Controller
+participant "GestanteService" as Service
+database "Banco de Dados" as BD
+
+Gestante -> App : Informa login (CPF) e senha temporários
+App -> AuthController : POST /auth/login
+AuthController -> AuthService : autenticar(login, senha)
+AuthService -> BD : buscarUsuario(login)
+BD --> AuthService : usuário
+
+alt credenciais inválidas
+    AuthService --> AuthController : Erro de autenticação
+    AuthController --> App : 401 Unauthorized
+    App --> Gestante : Exibe "Login ou senha inválidos"
+else credenciais válidas e status PRIMEIRO_ACESSO_PENDENTE
+    AuthService --> AuthController : token restrito ao primeiro acesso\n+ primeiroAcesso = true
+    AuthController --> App : 200 OK
+    App --> Gestante : Exibe tela de troca de credenciais e complemento de dados
+    Gestante -> App : Informa novo login, nova senha, consentimento da LGPD,\ndados socioeconômicos (opcionais) e foto (opcional)
+    App -> Controller : PUT /gestantes/primeiro-acesso (multipart: dados + foto)
+
+    alt dados inválidos (login fora do padrão, senha sem letras e números\nou com menos de 8 caracteres, consentimento da LGPD não aceito)
+        Controller --> App : 400 Bad Request
+        App --> Gestante : Exibe os erros
+    else dados válidos
+        Controller -> Service : concluirPrimeiroAcesso(idGestante do token, dados, foto)
+        Service -> BD : buscarGestante(idGestante) e existeLogin(novoLogin)
+        BD --> Service : resultado
+
+        alt primeiro acesso já concluído ou novo login já em uso
+            Service --> Controller : Erro: primeiro acesso já concluído / login indisponível
+            Controller --> App : 409 Conflict
+            App --> Gestante : Exibe o erro
+        else foto enviada não é imagem aceita
+            Service --> Controller : Erro: imagem inválida
+            Controller --> App : 400 Bad Request
+            App --> Gestante : Exibe mensagem para conferir a foto
+        else dados válidos
+            Service -> Service : criptografarSenha(novaSenha)
+            Service -> BD : atualizarGestante(novo login, hash da senha, status = ATIVA,\nconsentimento da LGPD e data do consentimento)
+            Service -> BD : salvarDadosSocioeconomicos(idGestante, dados,\nfator de ponderação = 1,00)
+            opt foto enviada
+                Service -> BD : salvarFoto(idGestante, conteudo, tipo)
+            end
+            Service --> Controller : cadastro concluído
+            Controller -> AuthService : renovarToken(idGestante)
+            AuthService --> Controller : novo token (perfil GESTANTE)\n+ tutorialPendente = true
+            Controller --> App : 200 OK
+            App --> Gestante : Exibe tutorial de uso
+
+            loop para cada etapa do tutorial
+                App --> Gestante : Exibe funcionalidade (pontos, cupons, conteúdo educativo)
+                Gestante -> App : Avança etapa
+            end
+
+            Gestante -> App : Conclui tutorial
+            App -> Controller : PUT /gestantes/tutorial-concluido
+            Controller -> Service : concluirTutorial(idGestante do token)
+            Service -> BD : registrarTutorialConcluido(idGestante)
+            Controller --> App : 204 No Content
+            App --> Gestante : Redireciona para a tela inicial
+        end
+    end
+end
+
+note over Gestante, BD
+    O token emitido com as credenciais temporárias só permite concluir o primeiro acesso.
+    O fator de ponderação dos pontos é neutro (1,00) até a regra de ponderação ser definida.
+end note
+
+@enduml

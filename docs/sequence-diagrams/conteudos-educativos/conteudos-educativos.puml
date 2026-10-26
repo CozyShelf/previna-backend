@@ -1,0 +1,46 @@
+@startuml conteudos-educativos
+title Acesso a Conteúdos Educativos sobre Pré-natal (Gestante)
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Mobile\n(Tela de Conteúdos)" as App
+control "ConteudoController" as Controller
+participant "ConteudoService" as Service
+database "Banco de Dados" as BD
+
+note over Gestante, Controller
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
+    Tokens de primeiro acesso pendente recebem 403 Forbidden.
+end note
+
+Gestante -> App : Acessa "Conteúdos educativos"
+App -> Controller : GET /conteudos
+Controller -> Service : listarPublicados()
+Service -> BD : buscarConteudos(publicado = true)\nordenados por publicadoEm desc
+BD --> Service : conteúdos
+Service --> Controller : lista resumida (id, título, categoria, publicadoEm)
+Controller --> App : 200 OK
+
+alt nenhum conteúdo publicado
+    App --> Gestante : Exibe mensagem "Nenhum conteúdo disponível no momento"
+else há conteúdos publicados
+    App --> Gestante : Exibe os conteúdos agrupados por categoria
+
+    Gestante -> App : Seleciona um conteúdo
+    App -> Controller : GET /conteudos/{id}
+    Controller -> Service : buscarPublicado(id)
+    Service -> BD : buscarConteudo(id, publicado = true)
+    BD --> Service : resultado
+
+    alt conteúdo inexistente ou despublicado
+        Service --> Controller : Erro: conteúdo não encontrado
+        Controller --> App : 404 Not Found
+        App --> Gestante : Exibe mensagem "Conteúdo indisponível"
+    else conteúdo encontrado
+        Service --> Controller : conteúdo (título, corpo, categoria, publicadoEm)
+        Controller --> App : 200 OK
+        App --> Gestante : Exibe o conteúdo completo
+    end
+end
+
+@enduml

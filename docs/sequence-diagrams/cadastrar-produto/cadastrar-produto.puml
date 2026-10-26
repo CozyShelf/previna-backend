@@ -1,0 +1,59 @@
+@startuml cadastrar-produto
+title Cadastrar Produto (Empresa Parceira)
+autonumber
+
+actor "Empresa Parceira" as Empresa
+boundary "Portal da Empresa" as Portal
+control "ProdutoController" as Controller
+participant "ProdutoService" as Service
+database "Banco de Dados" as BD
+
+note over Empresa, Controller
+    Requer empresa autenticada (perfil EMPRESA_PARCEIRA); outros perfis recebem 403 Forbidden.
+    A empresa vem do token, não do caminho: uma empresa não cadastra produtos em nome de outra.
+end note
+
+Empresa -> Portal : Acessa "Cadastrar produto"
+Portal --> Empresa : Exibe formulário
+Empresa -> Portal : Informa nome, descrição, categoria (fraldas, roupas\nou remédios), preço sem desconto e imagem\n(só o nome é obrigatório)
+
+alt dados inválidos na tela (nome ausente, preço fora do formato,\nimagem que não é PNG, JPG ou WebP, ou maior que 2 MB)
+    Portal --> Empresa : Exibe os erros no formulário, sem enviar
+else dados válidos na tela
+    Portal -> Controller : POST /empresas/produtos (multipart: dados + imagem)
+
+    alt dados inválidos (as mesmas regras, conferidas de novo no servidor)
+        Controller --> Portal : 400 Bad Request
+        Portal --> Empresa : Exibe mensagem para conferir os campos
+    else dados válidos
+        Controller -> Service : cadastrar(idEmpresa do token, dados, imagem)
+        Service -> Service : conferir o tipo da imagem pelo conteúdo
+
+        alt arquivo não é imagem aceita
+            Service --> Controller : Erro: imagem inválida
+            Controller --> Portal : 400 Bad Request
+            Portal --> Empresa : Exibe mensagem para conferir a imagem
+        else imagem válida ou não enviada
+            Service -> BD : salvarProduto(idEmpresa, nome, descricao, categoria, preco)
+            BD --> Service : produto salvo
+            opt imagem enviada
+                Service -> BD : salvarImagemProduto(idProduto, conteudo, tipo)
+                note right of Service
+                    imagem_url leva uma versão (?v=)
+                    para o navegador não reaproveitar
+                    a imagem antiga ao trocar
+                end note
+            end
+            Service --> Controller : produto
+            Controller --> Portal : 201 Created
+            Portal --> Empresa : Volta para a lista com\n"Produto <nome> cadastrado com sucesso."
+        end
+    end
+end
+
+note over Empresa, BD
+    A categoria liga o produto às promoções: uma promoção de "Fraldas" vale para todos os produtos da empresa nessa categoria.
+    O preço é o normal, sem desconto. A edição (PUT /empresas/produtos/{id}) segue o mesmo fluxo e só troca a imagem quando outra é enviada.
+end note
+
+@enduml

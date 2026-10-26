@@ -1,0 +1,50 @@
+@startuml cadastrar-promocao
+title Cadastrar Promoção (Empresa Parceira)
+autonumber
+
+actor "Empresa Parceira" as Empresa
+boundary "Portal da Empresa" as Portal
+control "PromocaoController" as Controller
+participant "PromocaoService" as Service
+database "Banco de Dados" as BD
+
+note over Empresa, Controller
+    Requer empresa autenticada (perfil EMPRESA_PARCEIRA); outros perfis recebem 403 Forbidden.
+    A empresa vem do token, não do caminho: uma empresa não cria promoções em nome de outra.
+end note
+
+Empresa -> Portal : Acessa "Cadastrar promoção"
+Portal --> Empresa : Exibe formulário com as categorias\n(fraldas, roupas ou remédios)
+Empresa -> Portal : Informa título, descrição, desconto (%),\ncategoria e período de vigência
+
+alt dados inválidos na tela (campo obrigatório ausente, desconto fora de 0 a 100,\nfim antes do início ou já passado)
+    Portal --> Empresa : Exibe os erros no formulário, sem enviar
+else dados válidos na tela
+    Portal -> Controller : POST /empresas/promocoes\n(titulo, descricao, desconto, dataInicio, dataFim, categoria)
+
+    alt dados inválidos (as mesmas regras, conferidas de novo no servidor)
+        Controller --> Portal : 400 Bad Request
+        Portal --> Empresa : Exibe mensagem para conferir o período e a categoria
+    else dados válidos
+        Controller -> Service : cadastrar(idEmpresa do token, dados)
+
+        alt fim antes do início
+            Service --> Controller : Erro: período inválido
+            Controller --> Portal : 400 Bad Request
+            Portal --> Empresa : Exibe mensagem para conferir o período
+        else período válido
+            Service -> BD : salvarPromocao(idEmpresa, titulo, descricao,\ndesconto, dataInicio, dataFim, categoria)
+            BD --> Service : promoção salva
+            Service --> Controller : promoção
+            Controller --> Portal : 201 Created
+            Portal --> Empresa : Volta para a lista com\n"Promoção <título> cadastrada com sucesso."
+        end
+    end
+end
+
+note over Empresa, BD
+    A promoção é geral: vale para todos os produtos da empresa na categoria escolhida, inclusive os cadastrados depois.
+    Desconto para um produto específico é cupom (ver cadastrar-cupom).
+end note
+
+@enduml

@@ -1,0 +1,54 @@
+@startuml pre-cadastro-gestante
+title Pré-cadastro da Gestante (Médico)
+autonumber
+
+actor "Médico" as Medico
+boundary "Tela de Pré-cadastro" as Tela
+control "GestanteController" as Controller
+participant "GestanteService" as Service
+participant "CredencialService" as Credencial
+database "Banco de Dados" as BD
+
+note over Medico, Controller
+    Requer médico autenticado (perfil MEDICO); outros perfis recebem 403 Forbidden.
+    A gestante fica vinculada ao médico do token.
+end note
+
+Medico -> Tela : Acessa "Cadastrar Gestante"
+Tela --> Medico : Exibe formulário de pré-cadastro
+Medico -> Tela : Informa dados (nome, CPF, data de nascimento,\ntelefone, e-mail opcional, DUM)
+Tela -> Controller : POST /gestantes/pre-cadastro
+
+alt dados inválidos (campo obrigatório ausente, CPF ou telefone inválido,\ndata de nascimento ou DUM no futuro)
+    Controller --> Tela : 400 Bad Request
+    Tela --> Medico : Exibe mensagem para conferir os campos
+else dados válidos
+    Controller -> Service : preCadastrar(dados, idMedico do token)
+    Service -> BD : existeUsuarioComCpf(cpf)
+    BD --> Service : resultado
+
+    alt CPF já cadastrado
+        Service --> Controller : Erro: gestante já cadastrada
+        Controller --> Tela : 409 Conflict
+        Tela --> Medico : Exibe mensagem "Gestante já cadastrada"
+    else CPF não cadastrado
+        Service -> Credencial : gerarSenhaAleatoria()
+        Credencial --> Service : senha temporária
+        Service -> BD : salvarGestante(dados, médico, login = CPF, hash da senha,\ndata provável do parto, status = PRIMEIRO_ACESSO_PENDENTE)
+        BD --> Service : gestante salva
+        Service --> Controller : credenciais temporárias (login = CPF, senha)
+        Controller --> Tela : 201 Created
+        Tela --> Medico : Exibe login e senha temporários
+        note right of Medico
+            O médico repassa as credenciais
+            temporárias à gestante
+        end note
+    end
+end
+
+note over Medico, BD
+    O login temporário é o próprio CPF; só a senha é gerada.
+    A data provável do parto é calculada a partir da DUM (DUM + 280 dias).
+end note
+
+@enduml

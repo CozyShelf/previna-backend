@@ -1,0 +1,42 @@
+@startuml acessar-cupons-resgatados
+title Acessar Cupons Resgatados (Gestante)
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Previna" as App
+control "CupomController" as Controller
+participant "CupomService" as Service
+database "Banco de Dados" as BD
+
+note over Gestante, Controller
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
+    A gestante vem do token, não do caminho: uma gestante não vê os cupons de outra.
+end note
+
+Gestante -> App : Acessa "Meus Cupons"
+App -> Controller : GET /gestantes/cupons
+Controller -> Service : listarCuponsResgatados(idGestante do token)
+Service -> BD : buscarCuponsResgatados(idGestante)
+BD --> Service : lista de cupons resgatados
+Service -> Service : marca como EXPIRADO os ATIVOS\ncom a validade do cupom vencida
+Service --> Controller : cupons (ATIVO, UTILIZADO, EXPIRADO)
+Controller --> App : 200 OK
+App --> Gestante : Exibe cupons agrupados por status
+
+Gestante -> App : Seleciona um cupom
+App -> Controller : GET /gestantes/cupons/{id}
+Controller -> Service : obterDetalhes(idCupomResgatado, idGestante do token)
+Service -> BD : buscarCupomResgatado(id, idGestante)
+BD --> Service : resultado
+
+alt cupom inexistente ou resgatado por outra gestante
+    Service --> Controller : Erro: cupom não encontrado
+    Controller --> App : 404 Not Found
+    App --> Gestante : Exibe "Cupom não encontrado"
+else cupom da gestante
+    Service --> Controller : detalhes (código, empresa, produto, desconto, validade, status)
+    Controller --> App : 200 OK
+    App --> Gestante : Exibe código/QR Code, empresa, produto,\ndesconto, validade e regras de uso
+end
+
+@enduml

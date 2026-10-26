@@ -1,0 +1,42 @@
+@startuml admin
+!pragma layout smetana
+left to right direction
+skinparam usecase {
+  BackgroundColor #FFF6E8
+  BorderColor #C77D1E
+}
+
+actor "Admin" as Admin
+
+rectangle "Previna - Admin" {
+  usecase "Gerenciar Médicos" as GerenciarMedicos
+  usecase "Cadastrar Médico" as CadastrarMedico
+  usecase "Editar Médico" as EditarMedico
+  usecase "Cadastrar Empresa\nParceira" as CadastrarEmpresa
+  usecase "Gerar Login e Senha\nTemporários" as GerarCredenciais
+  usecase "Gerenciar Conteúdos\nEducativos" as GerenciarConteudos
+  usecase "Cadastrar Conteúdo" as CadastrarConteudo
+  usecase "Publicar ou Despublicar\nConteúdo" as PublicarConteudo
+}
+
+Admin --> GerenciarMedicos
+Admin --> CadastrarEmpresa
+Admin --> GerenciarConteudos
+
+GerenciarMedicos ..> CadastrarMedico : <<include>>
+GerenciarMedicos ..> EditarMedico : <<include>>
+CadastrarEmpresa ..> GerarCredenciais : <<include>>
+GerenciarConteudos ..> CadastrarConteudo : <<include>>
+GerenciarConteudos ..> PublicarConteudo : <<include>>
+
+note right of PublicarConteudo
+  Só os conteúdos publicados aparecem para a
+  gestante em "Acessar Informações Educativas
+  sobre Pré-natal". O admin do token fica
+  registrado como autor (conteudo_informativo.autor_id).
+end note
+
+note "Todos os casos exigem login com perfil ADMIN\n(usuário interno do Previna)." as N1
+Admin .. N1
+
+@enduml
