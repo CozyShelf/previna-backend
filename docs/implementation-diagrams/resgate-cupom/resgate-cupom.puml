@@ -1,0 +1,58 @@
+@startuml resgate-cupom
+title Resgate de cupom pela gestante (previsto)
+
+|CupomController|
+start
+:POST /cupons/{id}/resgatar
+@PreAuthorize GESTANTE;
+
+|CupomService|
+:busca o cupom;
+if (inexistente?) then (sim)
+  |CupomController|
+  :404 Not Found;
+  stop
+else (não)
+endif
+|CupomService|
+if (desativado pela empresa
+ou fora da validade?) then (sim)
+  |CupomController|
+  :409 "Cupom indisponível";
+  stop
+else (não)
+endif
+
+|PontuacaoService|
+:consulta gestante.saldo_pontos
+(gestante bloqueada);
+if (saldo < cupom.pontos_necessarios?) then (sim)
+  |CupomController|
+  :409 "Pontos insuficientes";
+  stop
+else (não)
+endif
+
+|CupomService|
+:gera código único;
+:insere cupom_resgatado
+(codigo, status = ATIVO, data_resgate);
+
+|PontuacaoService|
+:insere transacao_pontos
+(tipo = DEBITO, pontos_necessarios, cupom resgatado);
+:gestante.saldo_pontos -= pontos_necessarios;
+
+|CupomController|
+:201 Created (código e novo saldo);
+stop
+
+note right
+  Tudo na mesma transação, com a gestante
+  bloqueada (SELECT ... FOR UPDATE):
+  dois resgates simultâneos não passam do saldo.
+  O cupom não tem quantidade: a empresa
+  o tira do ar desativando-o.
+end note
+
+@enduml

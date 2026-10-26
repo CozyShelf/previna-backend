@@ -1,0 +1,52 @@
+@startuml pre-cadastro-empresa-parceira
+title Pré-cadastro da Empresa Parceira (Administrador)
+autonumber
+
+actor "Administrador" as Admin
+boundary "Painel Administrativo" as Painel
+control "EmpresaController" as Controller
+participant "EmpresaService" as Service
+participant "CredencialService" as Credencial
+participant "EmailService" as Email
+database "Banco de Dados" as BD
+
+note over Admin, Controller
+    Requer usuário autenticado com perfil ADMIN; outros perfis recebem 403 Forbidden.
+end note
+
+Admin -> Painel : Acessa "Cadastrar Empresa Parceira"
+Painel --> Admin : Exibe formulário de pré-cadastro
+Admin -> Painel : Informa dados (razão social, CNPJ, e-mail,\ntelefone, responsável)
+Painel -> Controller : POST /empresas/pre-cadastro
+
+alt dados inválidos (campo obrigatório ausente, CNPJ, e-mail ou telefone inválido)
+    Controller --> Painel : 400 Bad Request
+    Painel --> Admin : Exibe mensagem para conferir os campos
+else dados válidos
+    Controller -> Service : preCadastrar(dados)
+    Service -> BD : existeEmpresaComCnpj(cnpj)
+    BD --> Service : resultado
+
+    alt CNPJ já cadastrado
+        Service --> Controller : Erro: empresa já cadastrada
+        Controller --> Painel : 409 Conflict
+        Painel --> Admin : Exibe "Empresa já cadastrada"
+    else CNPJ não cadastrado
+        Service -> Credencial : gerarSenhaAleatoria()
+        Credencial --> Service : senha temporária
+        Service -> BD : salvarEmpresa(dados, login = CNPJ, hash da senha,\nstatus = PRIMEIRO_ACESSO_PENDENTE)
+        BD --> Service : empresa salva
+        Service -> Email : enviarPreLogin(email, login = CNPJ, senha temporária)
+        Email --> Service : e-mail enviado
+        Service --> Controller : empresa pré-cadastrada
+        Controller --> Painel : 201 Created
+        Painel --> Admin : Exibe "Empresa pré-cadastrada e pré-login enviado"
+    end
+end
+
+note over Admin, BD
+    O login temporário é o próprio CNPJ; só a senha é gerada. O e-mail é enviado dentro da transação:
+    se o envio falhar, o pré-cadastro é desfeito e o administrador tenta de novo.
+end note
+
+@enduml

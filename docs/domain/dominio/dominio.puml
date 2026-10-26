@@ -1,0 +1,234 @@
+@startuml dominio
+!pragma layout smetana
+title PREVINA - Modelo lógico do banco de dados
+hide circle
+hide stereotype
+skinparam class {
+  BackgroundColor<<previsto>> #EEEEEE
+  BorderColor<<previsto>> #888888
+  FontColor<<previsto>> #555555
+}
+
+legend top right
+  Fundo branco: tabela criada nas migrações (V1 a V10).
+  Fundo cinza: tabela prevista, ainda sem migração.
+  • campo obrigatório (NOT NULL)
+endlegend
+
+entity usuario {
+  * id : bigint <<PK>>
+  --
+  * nome : varchar
+  cpf : varchar <<UK>>
+  email : varchar <<UK>>
+  * login : varchar <<UK>>
+  * senha_hash : varchar
+  * perfil : varchar
+  * status_conta : varchar
+  * criado_em : timestamp
+}
+
+entity medico {
+  * usuario_id : bigint <<PK>> <<FK>>
+  --
+  * crm : varchar <<UK>>
+  * ver_todas_gestantes : boolean
+}
+
+entity gestante {
+  * usuario_id : bigint <<PK>> <<FK>>
+  --
+  * medico_id : bigint <<FK>>
+  * data_nascimento : date
+  * telefone : varchar
+  * dum : date
+  * data_provavel_parto : date
+  * saldo_pontos : int
+  * consentimento_lgpd : boolean
+  data_consentimento : timestamp
+  * tutorial_concluido : boolean
+}
+
+entity foto_gestante {
+  * gestante_id : bigint <<PK>> <<FK>>
+  --
+  * conteudo : bytea
+  * tipo : varchar
+}
+
+entity dados_socioeconomicos {
+  * gestante_id : bigint <<PK>> <<FK>>
+  --
+  renda_familiar : decimal
+  pessoas_domicilio : int
+  escolaridade : varchar
+  beneficiaria_programa_social : boolean
+  * fator_ponderacao : decimal
+}
+
+entity empresa_parceira {
+  * usuario_id : bigint <<PK>> <<FK>>
+  --
+  * razao_social : varchar
+  * cnpj : varchar <<UK>>
+  telefone : varchar
+  responsavel : varchar
+  endereco : varchar
+  logo_url : varchar
+  descricao : text
+  segmento : varchar
+}
+
+entity logo_empresa {
+  * empresa_id : bigint <<PK>> <<FK>>
+  --
+  * conteudo : bytea
+  * tipo : varchar
+}
+
+entity produto {
+  * id : bigint <<PK>>
+  --
+  * empresa_id : bigint <<FK>>
+  * nome : varchar
+  descricao : text
+  categoria : FRALDAS | ROUPAS | REMEDIOS
+  preco : decimal (sem desconto)
+  imagem_url : varchar
+}
+
+entity imagem_produto {
+  * produto_id : bigint <<PK>> <<FK>>
+  --
+  * conteudo : bytea
+  * tipo : varchar
+}
+
+entity promocao {
+  * id : bigint <<PK>>
+  --
+  * empresa_id : bigint <<FK>>
+  * titulo : varchar
+  descricao : text
+  * desconto : decimal (%)
+  * data_inicio : date
+  * data_fim : date
+  * categoria : FRALDAS | ROUPAS | REMEDIOS
+}
+
+entity cupom {
+  * id : bigint <<PK>>
+  --
+  * empresa_id : bigint <<FK>>
+  * produto_id : bigint <<FK>>
+  * desconto : decimal (%)
+  * data_validade : date
+  * pontos_necessarios : int
+  * ativo : boolean
+}
+
+entity tipo_atendimento <<previsto>> {
+  * id : bigint <<PK>>
+  --
+  * nome : varchar
+  * categoria : EXAME | CONSULTA
+  descricao : text
+  * pontos_base : int
+  * ativo : boolean
+}
+
+entity agendamento <<previsto>> {
+  * id : bigint <<PK>>
+  --
+  * gestante_id : bigint <<FK>>
+  * tipo_atendimento_id : bigint <<FK>>
+  * atribuido_por : bigint <<FK>>
+  confirmado_por : bigint <<FK>>
+  * data_prevista : date
+  * status : AGENDADO | REALIZADO | CANCELADO
+  data_confirmacao : timestamp
+  observacao : text
+}
+
+entity transacao_pontos <<previsto>> {
+  * id : bigint <<PK>>
+  --
+  * gestante_id : bigint <<FK>>
+  agendamento_id : bigint <<FK>>
+  cupom_resgatado_id : bigint <<FK>>
+  * tipo : CREDITO | DEBITO
+  * pontos : int
+  fator_aplicado : decimal
+  * data_hora : timestamp
+}
+
+entity cupom_resgatado <<previsto>> {
+  * id : bigint <<PK>>
+  --
+  * cupom_id : bigint <<FK>>
+  * gestante_id : bigint <<FK>>
+  * codigo : varchar <<UK>>
+  * status : ATIVO | UTILIZADO | EXPIRADO
+  * data_resgate : timestamp
+  data_uso : timestamp
+}
+
+entity conteudo_informativo <<previsto>> {
+  * id : bigint <<PK>>
+  --
+  * autor_id : bigint <<FK>> (admin)
+  * titulo : varchar
+  * corpo : text
+  categoria : varchar
+  * publicado : boolean
+  publicado_em : timestamp
+}
+
+entity log_auditoria <<previsto>> {
+  * id : bigint <<PK>>
+  --
+  * usuario_id : bigint <<FK>>
+  agendamento_id : bigint <<FK>>
+  transacao_id : bigint <<FK>>
+  * evento : varchar
+  detalhes : text
+  * data_hora : timestamp
+}
+
+usuario ||--o| medico
+usuario ||--o| gestante
+usuario ||--o| empresa_parceira
+usuario ||--o{ conteudo_informativo
+usuario ||--o{ log_auditoria
+
+medico ||--o{ gestante
+gestante ||--o| foto_gestante
+gestante ||--o| dados_socioeconomicos
+
+empresa_parceira ||--o| logo_empresa
+empresa_parceira ||--o{ produto
+empresa_parceira ||--o{ promocao
+empresa_parceira ||--o{ cupom
+produto ||--o| imagem_produto
+produto ||--o{ cupom
+
+cupom ||--o{ cupom_resgatado
+gestante ||--o{ cupom_resgatado
+
+gestante ||--o{ agendamento
+tipo_atendimento ||--o{ agendamento
+medico ||--o{ agendamento : atribuido_por
+medico |o--o{ agendamento : confirmado_por
+
+gestante ||--o{ transacao_pontos
+agendamento |o--o| transacao_pontos
+cupom_resgatado |o--o| transacao_pontos
+agendamento |o--o{ log_auditoria
+transacao_pontos |o--o{ log_auditoria
+
+note bottom of promocao
+  Sem ligação direta com produto: a promoção vale
+  para todos os produtos da empresa com a mesma categoria.
+end note
+
+@enduml

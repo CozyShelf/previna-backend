@@ -1,0 +1,66 @@
+@startuml primeiro-acesso-empresa-parceira
+title Primeiro Acesso da Empresa Parceira
+autonumber
+
+actor "Empresa Parceira" as Empresa
+boundary "Portal da Empresa" as Portal
+control "AuthController" as AuthController
+participant "AuthService" as AuthService
+control "EmpresaController" as Controller
+participant "EmpresaService" as Service
+database "Banco de Dados" as BD
+
+Empresa -> Portal : Informa login (CNPJ) e senha temporários recebidos por e-mail
+Portal -> AuthController : POST /auth/login
+AuthController -> AuthService : autenticar(login, senha)
+AuthService -> BD : buscarUsuario(login)
+BD --> AuthService : usuário
+
+alt credenciais inválidas
+    AuthService --> AuthController : Erro de autenticação
+    AuthController --> Portal : 401 Unauthorized
+    Portal --> Empresa : Exibe "Login ou senha inválidos"
+else credenciais válidas e status PRIMEIRO_ACESSO_PENDENTE
+    AuthService --> AuthController : token restrito ao primeiro acesso\n+ primeiroAcesso = true
+    AuthController --> Portal : 200 OK
+    Portal --> Empresa : Exibe tela para finalizar o cadastro
+    Empresa -> Portal : Informa novo login, nova senha e dados complementares\n(endereço, segmento, descrição e logo opcionais)
+    Portal -> Controller : PUT /empresas/primeiro-acesso (multipart: dados + logo)
+
+    alt dados inválidos (login fora do padrão, senha sem letras e números\nou com menos de 8 caracteres, campo obrigatório ausente)
+        Controller --> Portal : 400 Bad Request
+        Portal --> Empresa : Exibe os erros
+    else dados válidos
+        Controller -> Service : concluirPrimeiroAcesso(idEmpresa do token, dados, logo)
+        Service -> BD : buscarEmpresa(idEmpresa) e existeLogin(novoLogin)
+        BD --> Service : resultado
+
+        alt primeiro acesso já concluído ou novo login já em uso
+            Service --> Controller : Erro: primeiro acesso já concluído / login indisponível
+            Controller --> Portal : 409 Conflict
+            Portal --> Empresa : Exibe o erro
+        else logo enviado não é imagem aceita
+            Service --> Controller : Erro: imagem inválida
+            Controller --> Portal : 400 Bad Request
+            Portal --> Empresa : Exibe mensagem para conferir o logo
+        else dados válidos
+            Service -> Service : criptografarSenha(novaSenha)
+            Service -> BD : atualizarEmpresa(novo login, hash da senha, status = ATIVA,\nendereço, segmento, descrição)
+            opt logo enviado
+                Service -> BD : salvarLogo(idEmpresa, conteudo, tipo)
+            end
+            Service --> Controller : cadastro concluído
+            Controller -> AuthService : renovarToken(idEmpresa)
+            AuthService --> Controller : novo token (perfil EMPRESA_PARCEIRA)
+            Controller --> Portal : 200 OK
+            Portal --> Empresa : Exibe o tutorial de uso e, ao final, o painel da empresa
+        end
+    end
+end
+
+note over Empresa, BD
+    O token emitido com as credenciais temporárias só permite concluir o primeiro acesso.
+    O novo login precisa ter ao menos uma letra, para não colidir com os logins temporários (CPF e CNPJ).
+end note
+
+@enduml

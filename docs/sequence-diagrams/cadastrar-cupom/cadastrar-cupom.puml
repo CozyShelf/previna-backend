@@ -1,0 +1,84 @@
+@startuml cadastrar-cupom
+title Cadastrar Cupom (Empresa Parceira)
+autonumber
+
+actor "Empresa Parceira" as Empresa
+boundary "Portal da Empresa" as Portal
+control "ProdutoController" as ProdutoController
+participant "ProdutoService" as ProdutoService
+control "CupomController" as Controller
+participant "CupomService" as Service
+database "Banco de Dados" as BD
+
+note over Empresa, Controller
+    Requer empresa autenticada (perfil EMPRESA_PARCEIRA); outros perfis recebem 403 Forbidden.
+    A empresa vem do token, não do caminho.
+end note
+
+Empresa -> Portal : Acessa "Cadastrar cupom"
+Portal -> ProdutoController : GET /empresas/produtos
+ProdutoController -> ProdutoService : listar(idEmpresa do token)
+ProdutoService -> BD : buscarProdutos(idEmpresa)
+BD --> ProdutoService : produtos da empresa
+ProdutoService --> ProdutoController : produtos
+ProdutoController --> Portal : 200 OK
+
+alt empresa sem produtos
+    Portal --> Empresa : Exibe "Cadastre o produto antes de criar o cupom"\ncom o atalho para o cadastro de produto
+else empresa com produtos
+    Portal --> Empresa : Exibe formulário com a lista de produtos
+    Empresa -> Portal : Escolhe o produto e informa desconto (%),\nvalidade e pontos para resgatar
+
+    alt dados inválidos na tela (produto não escolhido, desconto fora de 0 a 100,\nvalidade passada, pontos não inteiros ou zero)
+        Portal --> Empresa : Exibe os erros no formulário, sem enviar
+    else dados válidos na tela
+        Portal -> Controller : POST /empresas/cupons\n(produto, desconto, dataValidade, pontosNecessarios)
+
+        alt dados inválidos (as mesmas regras, conferidas de novo no servidor)
+            Controller --> Portal : 400 Bad Request
+            Portal --> Empresa : Exibe mensagem para conferir os campos
+        else dados válidos
+            Controller -> Service : cadastrar(idEmpresa do token, dados)
+            Service -> BD : buscarProduto(idProduto, idEmpresa)
+            BD --> Service : resultado
+
+            alt produto inexistente ou de outra empresa
+                Service --> Controller : Erro: produto não pertence à empresa
+                Controller --> Portal : 400 Bad Request
+                Portal --> Empresa : Exibe mensagem para conferir o produto
+            else produto da empresa
+                Service -> BD : salvarCupom(idEmpresa, produto, desconto,\ndataValidade, pontosNecessarios, ativo = true)
+                BD --> Service : cupom salvo
+                Service --> Controller : cupom com a descrição montada\n("10% de desconto em Fralda RN")
+                Controller --> Portal : 201 Created
+                Portal --> Empresa : Volta para a lista com\n"Cupom <descrição> cadastrado com sucesso."
+            end
+        end
+    end
+end
+
+== Ativar ou desativar ==
+
+Empresa -> Portal : Clica em "Desativar" (ou "Ativar") na lista de cupons
+Portal -> Controller : PUT /empresas/cupons/{id}/ativo (ativo)
+Controller -> Service : alterarAtivo(idEmpresa do token, idCupom, ativo)
+Service -> BD : buscarCupom(idCupom, idEmpresa)
+BD --> Service : resultado
+
+alt cupom inexistente ou de outra empresa
+    Service --> Controller : Erro: cupom não encontrado
+    Controller --> Portal : 404 Not Found
+    Portal --> Empresa : Exibe "Não foi possível alterar"
+else cupom da empresa
+    Service -> BD : atualizarAtivo(idCupom, ativo)
+    Controller --> Portal : 200 OK
+    Portal --> Empresa : Mostra a nova situação (Ativo/Inativo) na linha
+end
+
+note over Empresa, BD
+    O cupom vale só para um produto; desconto geral numa categoria é promoção.
+    Não há quantidade: a empresa tira o cupom do ar desativando-o. A descrição não é guardada,
+    é montada a partir do desconto e do nome atual do produto.
+end note
+
+@enduml

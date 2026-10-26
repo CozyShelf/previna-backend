@@ -1,0 +1,50 @@
+@startuml medico
+!pragma layout smetana
+left to right direction
+skinparam usecase {
+  BackgroundColor #FDF0F5
+  BorderColor #B03A6B
+}
+
+actor "Médico" as Medico
+actor "Gestante" as Gestante
+
+rectangle "Previna - Médico" {
+  usecase "Cadastrar Exame" as CadastrarExame
+  usecase "Cadastrar Consulta" as CadastrarConsulta
+  usecase "Confirmar Realização\nde Exame" as ConfirmarExame
+  usecase "Confirmar Realização\nde Consulta" as ConfirmarConsulta
+  usecase "Cadastrar Gestante" as CadastrarGestante
+  usecase "Realizar Primeiro Acesso" as PrimeiroAcesso
+  usecase "Verificar Presença\nda Gestante" as VerificarPresenca
+  usecase "Gerar Login e Senha\nTemporários" as GerarCredenciais
+  usecase "Visualizar Tutorial\nde Uso" as Tutorial
+  usecase "Complementar Dados\nde Cadastro" as Complementar
+  usecase "Alterar Login e Senha" as AlterarCredenciais
+}
+
+Medico --> CadastrarExame
+Medico --> CadastrarConsulta
+Medico --> ConfirmarExame
+Medico --> ConfirmarConsulta
+Medico --> CadastrarGestante
+Gestante --> PrimeiroAcesso
+
+ConfirmarExame ..> VerificarPresenca : <<include>>
+ConfirmarConsulta ..> VerificarPresenca : <<include>>
+CadastrarGestante ..> GerarCredenciais : <<include>>
+PrimeiroAcesso ..> Tutorial : <<include>>
+PrimeiroAcesso ..> Complementar : <<include>>
+PrimeiroAcesso ..> AlterarCredenciais : <<include>>
+
+note right of PrimeiroAcesso
+  Pré-condição: gestante cadastrada pelo médico.
+  Ocorre no primeiro acesso, com as credenciais temporárias.
+end note
+
+note right of CadastrarGestante
+  O médico realiza o cadastro da gestante.
+  O sistema gera login e senha temporários.
+end note
+
+@enduml

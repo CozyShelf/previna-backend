@@ -1,0 +1,56 @@
+@startuml listagens-paginadas
+title Listagem paginada com busca e filtros (exemplo: gestantes)
+
+|GestanteController|
+start
+:GET /gestantes?busca&situacao&somenteMinhas&pagina&tamanho;
+:@Valid ListagemRequest
+busca ≤ 100 caracteres · pagina ≥ 0 · tamanho de 1 a 100 (padrão 20);
+
+|GestanteService|
+:carrega o médico autenticado;
+if (verTodasGestantes e não somenteMinhas?) then (sim)
+  :sem filtro de médico;
+else (não)
+  :filtra pelo médico;
+endif
+
+|Filtros|
+if (termo de busca vazio?) then (sim)
+  :sem restrição;
+else (não)
+  :unaccent(lower(campo)) LIKE '%termo%'
+  em cada campo de texto (nome);
+  if (termo só com números,
+  com ou sem máscara?) then (sim)
+    :documento LIKE '%dígitos%' (cpf);
+  else (não)
+  endif
+  :une as alternativas com OR;
+endif
+:igual("statusConta", situacao)
+(sem valor, não restringe);
+
+|GestanteService|
+:Specification.allOf(busca, situação, médico);
+:PageRequest ordenado por nome e, no empate, por id;
+
+|GestanteRepository|
+:findAll(filtro, página)
+@EntityGraph traz o médico na mesma consulta;
+
+|GestanteService|
+:PaginaResponse
+(itens, pagina, tamanho, total, totalPaginas);
+
+|GestanteController|
+:200 OK;
+stop
+
+note right
+  Empresas e médicos seguem o mesmo fluxo,
+  sem a regra de acesso do médico.
+  Documento: cnpj (empresas) e cpf (médicos).
+end note
+
+@enduml

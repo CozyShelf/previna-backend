@@ -1,0 +1,38 @@
+@startuml ciclo-de-vida-conta
+!pragma layout smetana
+title Ciclo de vida da conta: pré-cadastro e primeiro acesso
+hide empty description
+
+state "PRIMEIRO_ACESSO_PENDENTE" as Pendente
+Pendente : login temporário = CPF (gestante) ou CNPJ (empresa)
+Pendente : senha temporária de 8 caracteres (SecureRandom)
+Pendente : token com papel PRIMEIRO_ACESSO, válido por 60 min
+Pendente : só alcança PUT /{gestantes|empresas}/primeiro-acesso
+
+state "ATIVA" as Ativa
+Ativa : login e senha definitivos (hash BCrypt)
+Ativa : token com o perfil da conta
+Ativa : gestante: 30 dias · demais perfis: 60 min
+
+[*] --> Pendente : pré-cadastro da gestante\nPOST /gestantes/pre-cadastro (MEDICO)\ncredenciais devolvidas ao médico
+[*] --> Pendente : pré-cadastro da empresa\nPOST /empresas/pre-cadastro (ADMIN)\ncredenciais enviadas por e-mail
+[*] --> Ativa : cadastro do médico\nPOST /medicos (ADMIN)\nlogin e senha definidos pelo admin
+
+Pendente --> Ativa : primeiro acesso\n[login livre, com ao menos uma letra;\nsenha de 8 a 72 caracteres, com letra e número;\nimagem PNG, JPEG ou WebP até 2 MB]\n/ AuthService.renovarToken
+
+note right of Pendente
+  O e-mail da empresa é enviado dentro da
+  transação: se o SMTP falhar, o pré-cadastro
+  é desfeito.
+end note
+
+note right of Ativa
+  Gravado no primeiro acesso:
+  gestante: consentimento LGPD (com data),
+  dados socioeconômicos (fator de ponderação 1,0)
+  e foto opcional
+  empresa: endereço, descrição, segmento
+  e logo opcional
+end note
+
+@enduml

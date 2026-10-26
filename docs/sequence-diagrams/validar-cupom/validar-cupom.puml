@@ -1,0 +1,60 @@
+@startuml validar-cupom
+title Validar Cupom (Empresa Parceira)
+autonumber
+
+actor "Gestante" as Gestante
+actor "Empresa Parceira" as Empresa
+boundary "Portal da Empresa" as Portal
+control "CupomController" as Controller
+participant "CupomService" as Service
+database "Banco de Dados" as BD
+
+note over Empresa, Controller
+    Requer empresa autenticada (perfil EMPRESA_PARCEIRA).
+    A empresa vem do token, não do caminho: uma empresa não valida cupons de outra.
+end note
+
+Gestante -> Empresa : Apresenta código/QR Code do cupom
+Empresa -> Portal : Informa ou escaneia o código
+Portal -> Controller : POST /empresas/cupons/validar (codigo)
+Controller -> Service : validarCupom(codigo, idEmpresa do token)
+Service -> BD : buscarCupomResgatado(codigo)
+BD --> Service : cupom resgatado (com o cupom: empresa, produto, desconto, validade)
+
+alt código não encontrado
+    Service --> Controller : Erro: cupom inexistente
+    Controller --> Portal : 404 Not Found
+    Portal --> Empresa : Exibe "Cupom inválido"
+else cupom de outra empresa
+    Service --> Controller : Erro: cupom inexistente
+    Controller --> Portal : 404 Not Found
+    Portal --> Empresa : Exibe "Cupom inválido"
+    note right of Controller
+        Mesma resposta do código inexistente,
+        para não revelar códigos de outras empresas
+    end note
+else cupom já UTILIZADO
+    Service --> Controller : Erro: cupom já utilizado (dataUso)
+    Controller --> Portal : 409 Conflict
+    Portal --> Empresa : Exibe "Cupom já utilizado em <data>"
+else cupom EXPIRADO (ou com a validade vencida)
+    Service -> BD : atualizarStatus(codigo, EXPIRADO)
+    Service --> Controller : Erro: cupom expirado
+    Controller --> Portal : 409 Conflict
+    Portal --> Empresa : Exibe "Cupom expirado"
+else cupom ATIVO e dentro da validade
+    Service -> BD : atualizarStatus(codigo, UTILIZADO, dataUso)\nsó se o status ainda for ATIVO
+    BD --> Service : ok
+    Service --> Controller : cupom validado
+    Controller --> Portal : 200 OK
+    Portal --> Empresa : Exibe "Cupom validado" com o produto e o desconto
+    Empresa --> Gestante : Aplica o desconto
+end
+
+note over Gestante, BD
+    A troca para UTILIZADO só acontece se o status ainda for ATIVO (UPDATE ... WHERE status = 'ATIVO'):
+    duas validações simultâneas do mesmo código não passam as duas.
+    Cupom já resgatado continua válido mesmo que a empresa desative o cupom depois: desativar só impede novos resgates.
+end note
+
+@enduml

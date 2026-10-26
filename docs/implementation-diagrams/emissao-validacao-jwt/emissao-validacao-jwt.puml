@@ -1,0 +1,72 @@
+@startuml emissao-validacao-jwt
+title Emissão e validação do token JWT
+
+|Cliente|
+start
+:POST /auth/login
+(login, senha);
+
+|AuthService|
+:busca o usuário pelo login;
+if (usuário existe e a senha confere
+com o hash BCrypt?) then (não)
+  :401 "Login ou senha inválidos";
+  stop
+else (sim)
+endif
+
+|JwtService|
+if (gestante com conta ATIVA?) then (sim)
+  :validade = 30 dias
+  (JWT_EXPIRACAO_GESTANTE_DIAS);
+else (não)
+  :validade = 60 min
+  (JWT_EXPIRACAO_MINUTOS);
+endif
+:gerarToken: assina com HMAC-SHA;
+note right
+  **Payload**
+  sub: id do usuário
+  perfil: ADMIN | MEDICO | GESTANTE | EMPRESA_PARCEIRA
+  primeiroAcesso: true | false
+  iat, exp
+end note
+
+|AuthService|
+:TokenResponse
+(token, primeiroAcesso, tutorialPendente);
+
+|Cliente|
+:guarda o token e o envia em cada requisição
+(Authorization: Bearer <token>);
+
+|JwtAuthenticationFilter|
+if (assinatura e validade
+conferem?) then (não)
+  :requisição segue sem usuário;
+  |Spring Security|
+  :401 Unauthorized
+  (exceto rotas públicas);
+  stop
+else (sim)
+endif
+|JwtAuthenticationFilter|
+if (primeiroAcesso?) then (sim)
+  :papel = PRIMEIRO_ACESSO;
+else (não)
+  :papel = perfil;
+endif
+:UsuarioAutenticado(id, papel)
+autoridade ROLE_<papel>;
+
+|Spring Security|
+if (@PreAuthorize do endpoint
+aceita o papel?) then (não)
+  :403 Forbidden;
+  stop
+else (sim)
+  :executa o controller;
+  stop
+endif
+
+@enduml

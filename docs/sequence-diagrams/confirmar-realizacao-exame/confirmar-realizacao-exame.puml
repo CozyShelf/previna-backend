@@ -1,0 +1,62 @@
+@startuml confirmar-realizacao-exame
+title Confirmar Realização de Exame ou Consulta (Médico)
+autonumber
+
+actor "Médico" as Medico
+boundary "Tela de Agendamentos" as Tela
+control "AgendamentoController" as Controller
+participant "AgendamentoService" as Service
+participant "PontuacaoService" as Pontuacao
+database "Banco de Dados" as BD
+
+note over Medico, Controller
+    Requer médico autenticado (perfil MEDICO); outros perfis recebem 403 Forbidden.
+    O médico vem do token: só confirma agendamentos das gestantes que acompanha.
+end note
+
+Medico -> Tela : Acessa "Agendamentos"
+Tela -> Controller : GET /agendamentos?status=AGENDADO
+Controller -> Service : listarAgendamentos(idMedico do token, AGENDADO)
+Service -> BD : buscarAgendamentos(idMedico, status = AGENDADO)
+BD --> Service : lista de agendamentos
+Service --> Controller : lista de agendamentos
+Controller --> Tela : 200 OK
+Tela --> Medico : Exibe agendamentos ainda não realizados
+
+Medico -> Tela : Seleciona agendamento e confirma presença da gestante
+Tela -> Controller : PUT /agendamentos/{id}/confirmar
+Controller -> Service : confirmarRealizacao(idAgendamento, idMedico do token)
+Service -> BD : buscarAgendamento(idAgendamento, idMedico)
+BD --> Service : agendamento (com o tipo de atendimento) ou nada
+
+alt agendamento inexistente ou de gestante que o médico não acompanha
+    Service --> Controller : Erro: agendamento não encontrado
+    Controller --> Tela : 404 Not Found
+    Tela --> Medico : Exibe "Agendamento não encontrado"
+else agendamento já REALIZADO ou CANCELADO
+    Service --> Controller : Erro: agendamento não pode ser confirmado
+    Controller --> Tela : 409 Conflict
+    Tela --> Medico : Exibe "Este agendamento já foi confirmado ou cancelado"
+else agendamento com status AGENDADO
+    Service -> BD : atualizarStatus(idAgendamento, REALIZADO,\nconfirmadoPor = idMedico, dataConfirmacao = agora)
+    Service -> Pontuacao : creditarPontos(idGestante, tipoAtendimento, idAgendamento)
+    Pontuacao -> BD : buscarFatorPonderacao(idGestante)
+    BD --> Pontuacao : dados_socioeconomicos.fator_ponderacao
+    Pontuacao -> Pontuacao : pontos = arredondar(tipo_atendimento.pontos_base\n× fator_ponderacao)
+    Pontuacao -> BD : registrarTransacao(tipo = CREDITO, pontos,\nfator_aplicado = fator_ponderacao, idAgendamento)
+    Pontuacao -> BD : atualizarSaldo(idGestante, +pontos)
+    BD --> Pontuacao : saldo atualizado
+    Pontuacao --> Service : pontos creditados
+    Service -> BD : registrarLog(idMedico, agendamento, transação,\nevento = AGENDAMENTO_CONFIRMADO)
+    Service --> Controller : confirmação realizada
+    Controller --> Tela : 200 OK
+    Tela --> Medico : Exibe "Presença confirmada e <n> pontos creditados"
+end
+
+note over Medico, BD
+    Status, transação de pontos, saldo e log na mesma transação: ou tudo é gravado, ou nada.
+    O fator de ponderação hoje é neutro (1,00) até a regra ser definida; gestante sem dados socioeconômicos usa 1,00.
+    fator_aplicado guarda o fator usado, para o extrato continuar explicável se a regra mudar.
+end note
+
+@enduml
