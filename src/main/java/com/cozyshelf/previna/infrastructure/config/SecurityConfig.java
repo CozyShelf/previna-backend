@@ -30,8 +30,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/error").permitAll()
                         .requestMatchers("/auth/login").permitAll()
-                        // Logo é público: a tag <img> não envia o token
-                        .requestMatchers(HttpMethod.GET, "/empresas/*/logo").permitAll()
+                        // Logo e imagem do produto são públicos: a tag <img> não envia o token
+                        .requestMatchers(HttpMethod.GET, "/empresas/*/logo", "/empresas/produtos/*/imagem").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated()
                 )
