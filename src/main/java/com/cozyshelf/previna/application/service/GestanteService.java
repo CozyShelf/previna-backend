@@ -9,6 +9,7 @@ import com.cozyshelf.previna.application.dto.response.GestanteResumoResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PerfilGestanteResponse;
 import com.cozyshelf.previna.application.exception.ConflitoException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.DadosSocioeconomicos;
 import com.cozyshelf.previna.domain.model.FotoGestante;
 import com.cozyshelf.previna.domain.model.Gestante;
@@ -92,6 +93,17 @@ public class GestanteService {
                 .map(g -> new GestanteResumoResponse(g.getId(), g.getNome(), g.getCpf(), g.getTelefone(),
                         g.getDum(), g.getDataProvavelParto(), g.primeiroAcessoPendente(),
                         g.getMedico().getNome())));
+    }
+
+    // Alcance do médico sobre uma gestante: a mesma regra da listagem. Sem a permissão do administrador,
+    // o médico só enxerga as gestantes que acompanha.
+    @Transactional(readOnly = true)
+    public Gestante gestanteDoMedico(Long idMedico, Long idGestante) {
+        Medico medico = medicoRepository.findById(idMedico).orElseThrow();
+        return (medico.podeVerTodasGestantes()
+                ? gestanteRepository.findById(idGestante)
+                : gestanteRepository.findByIdAndMedicoId(idGestante, idMedico))
+                .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
     }
 
     @Transactional
