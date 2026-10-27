@@ -212,7 +212,7 @@ class AgendamentoServiceTest {
     @Test
     void confirmaCreditaPontosEDevolveOSaldo() {
         var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
-        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
         when(pontuacaoService.creditarPorAgendamento(pendente)).thenAnswer(i -> {
             gestante.creditarPontos(25);
             return 25;
@@ -230,7 +230,7 @@ class AgendamentoServiceTest {
 
     @Test
     void confirmarAgendamentoJaRealizadoDaConflito() {
-        when(agendamentoRepository.findById(5L))
+        when(agendamentoRepository.findParaResolver(5L))
                 .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.REALIZADO, LocalDate.now())));
 
         var erro = assertThrows(ConflitoException.class, () -> service.confirmar(5L, 7L));
@@ -241,7 +241,7 @@ class AgendamentoServiceTest {
 
     @Test
     void confirmarAgendamentoNaoComparecidoDaConflito() {
-        when(agendamentoRepository.findById(5L))
+        when(agendamentoRepository.findParaResolver(5L))
                 .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.NAO_COMPARECEU, LocalDate.now())));
 
         assertThrows(ConflitoException.class, () -> service.confirmar(5L, 7L));
@@ -253,7 +253,7 @@ class AgendamentoServiceTest {
     @Test
     void confirmarAgendamentoDeGestanteForaDoAlcanceDaNaoEncontrado() {
         var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
-        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
         when(gestanteService.podeAcessar(8L, gestante)).thenReturn(false);
 
         var erro = assertThrows(NaoEncontradoException.class, () -> service.confirmar(5L, 8L));
@@ -265,7 +265,7 @@ class AgendamentoServiceTest {
 
     @Test
     void confirmarAgendamentoInexistenteDaNaoEncontrado() {
-        when(agendamentoRepository.findById(99L)).thenReturn(Optional.empty());
+        when(agendamentoRepository.findParaResolver(99L)).thenReturn(Optional.empty());
 
         var erro = assertThrows(NaoEncontradoException.class, () -> service.confirmar(99L, 7L));
 
@@ -275,7 +275,7 @@ class AgendamentoServiceTest {
     @Test
     void naoComparecimentoNaoCreditaPontos() {
         var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
-        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
 
         var resposta = service.registrarNaoComparecimento(5L, 7L);
 
@@ -289,7 +289,7 @@ class AgendamentoServiceTest {
 
     @Test
     void naoComparecimentoEmItemJaResolvidoDaConflito() {
-        when(agendamentoRepository.findById(5L))
+        when(agendamentoRepository.findParaResolver(5L))
                 .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.REALIZADO, LocalDate.now())));
 
         assertThrows(ConflitoException.class, () -> service.registrarNaoComparecimento(5L, 7L));
@@ -300,7 +300,7 @@ class AgendamentoServiceTest {
     @Test
     void segundaConfirmacaoSimultaneaNaoCreditaDeNovo() {
         var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
-        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
         when(pontuacaoService.creditarPorAgendamento(pendente))
                 .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
 
@@ -328,5 +328,20 @@ class AgendamentoServiceTest {
         when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of());
 
         assertEquals(List.of(), service.listarDaGestanteAutenticada(1L));
+    }
+
+    // Confirmar e registrar não comparecimento ao mesmo tempo liam o mesmo AGENDADO e um sobrescrevia o outro,
+    // deixando um NAO_COMPARECEU com pontos creditados. O desfecho passa a travar a linha antes de decidir.
+    @Test
+    void resolverTravaALinhaAntesDeDecidirODesfecho() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
+
+        service.registrarNaoComparecimento(5L, 7L);
+
+        assertEquals(StatusAgendamento.NAO_COMPARECEU, pendente.getStatus());
+        verify(agendamentoRepository).findParaResolver(5L);
+        // A busca sem trava não decide desfecho: ela não bloqueia a transação concorrente
+        verify(agendamentoRepository, never()).findById(5L);
     }
 }

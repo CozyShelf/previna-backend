@@ -105,7 +105,7 @@ public class AgendamentoService {
     // Agendamento fora do alcance do médico responde como inexistente, com a mensagem do agendamento:
     // a mensagem da gestante revelaria qual dos dois existe
     private Agendamento resolver(Long idAgendamento, Long idMedico, StatusAgendamento desfecho) {
-        Agendamento agendamento = agendamentoRepository.findById(idAgendamento)
+        Agendamento agendamento = agendamentoRepository.findParaResolver(idAgendamento)
                 .filter(a -> gestanteService.podeAcessar(idMedico, a.getGestante()))
                 .orElseThrow(() -> new NaoEncontradoException("Agendamento não encontrado"));
         if (!agendamento.pendente()) {
