@@ -72,10 +72,20 @@ public class AgendamentoService {
     public List<AgendamentoResponse> listarDaGestante(Long idMedico, Long idGestante) {
         // Confere o alcance do médico antes de listar; o id vem do caminho, já validado por essa busca
         gestanteService.gestanteDoMedico(idMedico, idGestante);
+        return ordenados(idGestante);
+    }
+
+    private List<AgendamentoResponse> ordenados(Long idGestante) {
         return agendamentoRepository.findByGestanteId(idGestante).stream()
                 .sorted(ORDEM)
                 .map(AgendamentoService::resposta)
                 .toList();
+    }
+
+    // No app, o id vem do token: a gestante só alcança os próprios, sem regra de médico
+    @Transactional(readOnly = true)
+    public List<AgendamentoResponse> listarDaGestanteAutenticada(Long idGestante) {
+        return ordenados(idGestante);
     }
 
     // Status, transação de pontos, saldo e resposta na mesma transação: ou tudo é gravado, ou nada

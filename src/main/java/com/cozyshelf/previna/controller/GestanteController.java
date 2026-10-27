@@ -73,6 +73,15 @@ public class GestanteController {
         return ResponseEntity.status(HttpStatus.CREATED).body(gestanteService.preCadastrar(dados, medico.id()));
     }
 
+    // Rota literal: o Spring a casa antes de /gestantes/{id}, como já acontece com /perfil e /foto
+    @GetMapping("/agendamentos")
+    @PreAuthorize("hasRole('GESTANTE')")
+    @Operation(summary = "Lista os exames e consultas da gestante autenticada, pendentes primeiro")
+    public ResponseEntity<List<AgendamentoResponse>> meusAgendamentos(
+            @AuthenticationPrincipal UsuarioAutenticado gestante) {
+        return ResponseEntity.ok(agendamentoService.listarDaGestanteAutenticada(gestante.id()));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('MEDICO')")
     @Operation(summary = "Retorna os dados de uma gestante ao alcance do médico autenticado")

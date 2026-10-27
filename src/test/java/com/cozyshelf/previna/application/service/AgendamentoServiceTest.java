@@ -308,4 +308,25 @@ class AgendamentoServiceTest {
 
         assertEquals(0, gestante.getSaldoPontos());
     }
+
+    // No app o id vem do token, nunca do caminho: a gestante não alcança a lista de outra
+    @Test
+    void gestanteVeApenasOsProprios() {
+        when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of(
+                agendamento(1L, StatusAgendamento.REALIZADO, LocalDate.of(2026, 1, 10)),
+                agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.of(2026, 1, 20))));
+
+        var resposta = service.listarDaGestanteAutenticada(1L);
+
+        assertEquals(List.of(2L, 1L), resposta.stream().map(AgendamentoResponse::id).toList());
+        verify(agendamentoRepository).findByGestanteId(1L);
+        verifyNoInteractions(gestanteService);
+    }
+
+    @Test
+    void gestanteSemAgendamentosDevolveListaVaziaNoApp() {
+        when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of());
+
+        assertEquals(List.of(), service.listarDaGestanteAutenticada(1L));
+    }
 }
