@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
+import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.lang.reflect.Field;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -53,6 +55,22 @@ class AgendamentoServiceTest {
 
     private static TipoAtendimento tipo(Long id, String nome, CategoriaAtendimento categoria, int pontos) {
         return new TipoAtendimento(id, nome, categoria, pontos, true);
+    }
+
+    // O id só existe depois de persistir; a ordenação usa o id como desempate, então os testes precisam dele
+    private Agendamento agendamento(long id, StatusAgendamento status, LocalDate dataPrevista) {
+        Agendamento agendamento = new Agendamento(gestante, hemograma, medico, dataPrevista, null);
+        if (status != StatusAgendamento.AGENDADO) {
+            agendamento.registrarDesfecho(status, medico);
+        }
+        try {
+            Field campo = Agendamento.class.getDeclaredField("id");
+            campo.setAccessible(true);
+            campo.set(agendamento, id);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        return agendamento;
     }
 
     @Test
@@ -136,6 +154,50 @@ class AgendamentoServiceTest {
         verify(agendamentoRepository, never()).save(any());
         // A gestante é conferida antes do tipo, como no diagrama: 404 vem antes de 400
         verify(tipoRepository, never()).findById(any());
+    }
+
+    // Pendentes primeiro, para o médico avaliar; depois os resolvidos, pela data prevista
+    @Test
+    void listaPendentesPrimeiroDepoisPorDataPrevista() {
+        when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of(
+                agendamento(1L, StatusAgendamento.REALIZADO, LocalDate.of(2026, 1, 10)),
+                agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.of(2026, 1, 20)),
+                agendamento(3L, StatusAgendamento.NAO_COMPARECEU, LocalDate.of(2026, 1, 5)),
+                agendamento(4L, StatusAgendamento.AGENDADO, LocalDate.of(2026, 1, 15))));
+
+        var resposta = service.listarDaGestante(7L, 1L);
+
+        assertEquals(List.of(StatusAgendamento.AGENDADO, StatusAgendamento.AGENDADO,
+                        StatusAgendamento.REALIZADO, StatusAgendamento.NAO_COMPARECEU),
+                resposta.stream().map(AgendamentoResponse::status).toList());
+        assertEquals(List.of(4L, 2L, 1L, 3L), resposta.stream().map(AgendamentoResponse::id).toList());
+    }
+
+    @Test
+    void desempataPeloIdQuandoStatusEDataSaoIguais() {
+        when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of(
+                agendamento(9L, StatusAgendamento.AGENDADO, LocalDate.of(2026, 1, 20)),
+                agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.of(2026, 1, 20))));
+
+        var resposta = service.listarDaGestante(7L, 1L);
+
+        assertEquals(List.of(2L, 9L), resposta.stream().map(AgendamentoResponse::id).toList());
+    }
+
+    @Test
+    void gestanteSemAgendamentosDevolveListaVazia() {
+        when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of());
+
+        assertEquals(List.of(), service.listarDaGestante(7L, 1L));
+    }
+
+    @Test
+    void naoListaAgendamentosDeGestanteForaDoAlcanceDoMedico() {
+        when(gestanteService.gestanteDoMedico(8L, 1L))
+                .thenThrow(new NaoEncontradoException("Gestante não encontrada"));
+
+        assertThrows(NaoEncontradoException.class, () -> service.listarDaGestante(8L, 1L));
+        verify(agendamentoRepository, never()).findByGestanteId(any());
     }
 
     // O cadastro não credita nada: os pontos só saem na confirmação

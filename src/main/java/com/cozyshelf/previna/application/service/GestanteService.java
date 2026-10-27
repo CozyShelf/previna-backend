@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.request.ListagemRequest;
 import com.cozyshelf.previna.application.dto.request.PreCadastroGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.dto.response.CredenciaisTemporariasResponse;
+import com.cozyshelf.previna.application.dto.response.GestanteDetalheResponse;
 import com.cozyshelf.previna.application.dto.response.GestanteResumoResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PerfilGestanteResponse;
@@ -104,6 +105,15 @@ public class GestanteService {
                 ? gestanteRepository.findById(idGestante)
                 : gestanteRepository.findByIdAndMedicoId(idGestante, idMedico))
                 .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
+    }
+
+    @Transactional(readOnly = true)
+    public GestanteDetalheResponse buscarDetalhe(Long idMedico, Long idGestante) {
+        Gestante gestante = gestanteDoMedico(idMedico, idGestante);
+        return new GestanteDetalheResponse(gestante.getId(), gestante.getNome(), gestante.getCpf(),
+                gestante.getTelefone(), gestante.getEmail(), gestante.getDataNascimento(), gestante.getDum(),
+                gestante.getDataProvavelParto(), gestante.getSaldoPontos(), gestante.primeiroAcessoPendente(),
+                gestante.getMedico().getNome());
     }
 
     @Transactional

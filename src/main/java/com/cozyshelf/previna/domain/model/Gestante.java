@@ -41,6 +41,10 @@ public class Gestante extends Usuario {
         return medico;
     }
 
+    public LocalDate getDataNascimento() {
+        return dataNascimento;
+    }
+
     public String getTelefone() {
         return telefone;
     }

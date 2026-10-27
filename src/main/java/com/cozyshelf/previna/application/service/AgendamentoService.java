@@ -14,6 +14,7 @@ import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -51,6 +52,23 @@ public class AgendamentoService {
 
         return resposta(agendamentoRepository.save(new Agendamento(gestante, tipo,
                 medicoRepository.getReferenceById(idMedico), dados.dataPrevista(), dados.observacao())));
+    }
+
+    // Pendentes primeiro (a ordem do enum é a de exibição), depois pela data prevista; o id desempata.
+    // A ordenação é feita aqui, e não no banco, porque ordenar pelo texto do status daria a ordem alfabética.
+    private static final Comparator<Agendamento> ORDEM = Comparator
+            .comparingInt((Agendamento a) -> a.getStatus().ordinal())
+            .thenComparing(Agendamento::getDataPrevista)
+            .thenComparing(Agendamento::getId);
+
+    @Transactional(readOnly = true)
+    public List<AgendamentoResponse> listarDaGestante(Long idMedico, Long idGestante) {
+        // Confere o alcance do médico antes de listar; o id vem do caminho, já validado por essa busca
+        gestanteService.gestanteDoMedico(idMedico, idGestante);
+        return agendamentoRepository.findByGestanteId(idGestante).stream()
+                .sorted(ORDEM)
+                .map(AgendamentoService::resposta)
+                .toList();
     }
 
     private static TipoAtendimentoResponse tipoResposta(TipoAtendimento tipo) {
