@@ -3,6 +3,7 @@ package com.cozyshelf.previna.application.service;
 import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
+import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
@@ -16,8 +17,10 @@ import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
-import java.lang.reflect.Field;
+import com.cozyshelf.previna.domain.Campos;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -33,12 +36,14 @@ class AgendamentoServiceTest {
     private final AgendamentoRepository agendamentoRepository = mock(AgendamentoRepository.class);
     private final MedicoRepository medicoRepository = mock(MedicoRepository.class);
     private final GestanteService gestanteService = mock(GestanteService.class);
+    private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
     private final AgendamentoService service = new AgendamentoService(tipoRepository, agendamentoRepository,
-            medicoRepository, gestanteService);
+            medicoRepository, gestanteService, pontuacaoService);
 
-    private final Medico medico = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
-    private final Gestante gestante = new Gestante("Maria", "12345678909", null, "12345678909", "hash",
-            medico, LocalDate.of(1995, 1, 1), "11999999999", LocalDate.now());
+    private final Medico medico = Campos.definir(
+            new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false), "id", 7L);
+    private final Gestante gestante = Campos.definir(new Gestante("Maria", "12345678909", null, "12345678909",
+            "hash", medico, LocalDate.of(1995, 1, 1), "11999999999", LocalDate.now()), "id", 1L);
     private final TipoAtendimento hemograma =
             new TipoAtendimento(3L, "Hemograma completo", CategoriaAtendimento.EXAME, 25, true);
 
@@ -47,6 +52,7 @@ class AgendamentoServiceTest {
         when(gestanteService.gestanteDoMedico(7L, 1L)).thenReturn(gestante);
         when(medicoRepository.getReferenceById(7L)).thenReturn(medico);
         when(agendamentoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(gestanteService.podeAcessar(7L, gestante)).thenReturn(true);
     }
 
     private static AgendamentoRequest dados(Long tipo) {
@@ -63,14 +69,7 @@ class AgendamentoServiceTest {
         if (status != StatusAgendamento.AGENDADO) {
             agendamento.registrarDesfecho(status, medico);
         }
-        try {
-            Field campo = Agendamento.class.getDeclaredField("id");
-            campo.setAccessible(true);
-            campo.set(agendamento, id);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-        return agendamento;
+        return Campos.definir(agendamento, "id", id);
     }
 
     @Test
@@ -206,6 +205,106 @@ class AgendamentoServiceTest {
         when(tipoRepository.findById(3L)).thenReturn(Optional.of(hemograma));
 
         service.agendar(dados(3L), 7L);
+
+        assertEquals(0, gestante.getSaldoPontos());
+    }
+
+    @Test
+    void confirmaCreditaPontosEDevolveOSaldo() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(pontuacaoService.creditarPorAgendamento(pendente)).thenAnswer(i -> {
+            gestante.creditarPontos(25);
+            return 25;
+        });
+
+        var resposta = service.confirmar(5L, 7L);
+
+        assertEquals(StatusAgendamento.REALIZADO, pendente.getStatus());
+        assertNotNull(pendente.getDataConfirmacao());
+        assertSame(medico, pendente.getConfirmadoPor());
+        assertEquals(25, resposta.pontosCreditados());
+        assertEquals(25, resposta.saldoPontos());
+        assertEquals(StatusAgendamento.REALIZADO, resposta.agendamento().status());
+    }
+
+    @Test
+    void confirmarAgendamentoJaRealizadoDaConflito() {
+        when(agendamentoRepository.findById(5L))
+                .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.REALIZADO, LocalDate.now())));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.confirmar(5L, 7L));
+
+        assertEquals("Este agendamento já foi resolvido", erro.getMessage());
+        verify(pontuacaoService, never()).creditarPorAgendamento(any());
+    }
+
+    @Test
+    void confirmarAgendamentoNaoComparecidoDaConflito() {
+        when(agendamentoRepository.findById(5L))
+                .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.NAO_COMPARECEU, LocalDate.now())));
+
+        assertThrows(ConflitoException.class, () -> service.confirmar(5L, 7L));
+        verify(pontuacaoService, never()).creditarPorAgendamento(any());
+    }
+
+    // Agendamento de gestante fora do alcance responde como inexistente, e com a mensagem do agendamento:
+    // a do 404 da gestante revelaria qual dos dois existe
+    @Test
+    void confirmarAgendamentoDeGestanteForaDoAlcanceDaNaoEncontrado() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(gestanteService.podeAcessar(8L, gestante)).thenReturn(false);
+
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.confirmar(5L, 8L));
+
+        assertEquals("Agendamento não encontrado", erro.getMessage());
+        assertEquals(StatusAgendamento.AGENDADO, pendente.getStatus());
+        verify(pontuacaoService, never()).creditarPorAgendamento(any());
+    }
+
+    @Test
+    void confirmarAgendamentoInexistenteDaNaoEncontrado() {
+        when(agendamentoRepository.findById(99L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.confirmar(99L, 7L));
+
+        assertEquals("Agendamento não encontrado", erro.getMessage());
+    }
+
+    @Test
+    void naoComparecimentoNaoCreditaPontos() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+
+        var resposta = service.registrarNaoComparecimento(5L, 7L);
+
+        assertEquals(StatusAgendamento.NAO_COMPARECEU, pendente.getStatus());
+        assertNotNull(pendente.getDataConfirmacao());
+        assertSame(medico, pendente.getConfirmadoPor());
+        assertEquals(StatusAgendamento.NAO_COMPARECEU, resposta.status());
+        assertEquals(0, gestante.getSaldoPontos());
+        verify(pontuacaoService, never()).creditarPorAgendamento(any());
+    }
+
+    @Test
+    void naoComparecimentoEmItemJaResolvidoDaConflito() {
+        when(agendamentoRepository.findById(5L))
+                .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.REALIZADO, LocalDate.now())));
+
+        assertThrows(ConflitoException.class, () -> service.registrarNaoComparecimento(5L, 7L));
+    }
+
+    // Duas confirmações ao mesmo tempo leem AGENDADO; o UNIQUE de agendamento_id derruba a segunda,
+    // e a transação inteira volta atrás — o saldo nunca é creditado duas vezes
+    @Test
+    void segundaConfirmacaoSimultaneaNaoCreditaDeNovo() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findById(5L)).thenReturn(Optional.of(pendente));
+        when(pontuacaoService.creditarPorAgendamento(pendente))
+                .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
+
+        assertThrows(DataIntegrityViolationException.class, () -> service.confirmar(5L, 7L));
 
         assertEquals(0, gestante.getSaldoPontos());
     }

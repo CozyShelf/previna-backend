@@ -2,11 +2,15 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
+import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
 import com.cozyshelf.previna.application.dto.response.TipoAtendimentoResponse;
+import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
@@ -23,13 +27,16 @@ public class AgendamentoService {
     private final AgendamentoRepository agendamentoRepository;
     private final MedicoRepository medicoRepository;
     private final GestanteService gestanteService;
+    private final PontuacaoService pontuacaoService;
 
     public AgendamentoService(TipoAtendimentoRepository tipoRepository, AgendamentoRepository agendamentoRepository,
-                              MedicoRepository medicoRepository, GestanteService gestanteService) {
+                              MedicoRepository medicoRepository, GestanteService gestanteService,
+                              PontuacaoService pontuacaoService) {
         this.tipoRepository = tipoRepository;
         this.agendamentoRepository = agendamentoRepository;
         this.medicoRepository = medicoRepository;
         this.gestanteService = gestanteService;
+        this.pontuacaoService = pontuacaoService;
     }
 
     // Só os tipos ativos: um tipo desativado não pode mais ser escolhido, mas continua nos agendamentos antigos
@@ -69,6 +76,33 @@ public class AgendamentoService {
                 .sorted(ORDEM)
                 .map(AgendamentoService::resposta)
                 .toList();
+    }
+
+    // Status, transação de pontos, saldo e resposta na mesma transação: ou tudo é gravado, ou nada
+    @Transactional
+    public ConfirmacaoResponse confirmar(Long idAgendamento, Long idMedico) {
+        Agendamento agendamento = resolver(idAgendamento, idMedico, StatusAgendamento.REALIZADO);
+        int pontos = pontuacaoService.creditarPorAgendamento(agendamento);
+        return new ConfirmacaoResponse(resposta(agendamento), pontos, agendamento.getGestante().getSaldoPontos());
+    }
+
+    // Faltar não credita nada; o registro serve para o acompanhamento do pré-natal
+    @Transactional
+    public AgendamentoResponse registrarNaoComparecimento(Long idAgendamento, Long idMedico) {
+        return resposta(resolver(idAgendamento, idMedico, StatusAgendamento.NAO_COMPARECEU));
+    }
+
+    // Agendamento fora do alcance do médico responde como inexistente, com a mensagem do agendamento:
+    // a mensagem da gestante revelaria qual dos dois existe
+    private Agendamento resolver(Long idAgendamento, Long idMedico, StatusAgendamento desfecho) {
+        Agendamento agendamento = agendamentoRepository.findById(idAgendamento)
+                .filter(a -> gestanteService.podeAcessar(idMedico, a.getGestante()))
+                .orElseThrow(() -> new NaoEncontradoException("Agendamento não encontrado"));
+        if (!agendamento.pendente()) {
+            throw new ConflitoException("Este agendamento já foi resolvido");
+        }
+        agendamento.registrarDesfecho(desfecho, medicoRepository.getReferenceById(idMedico));
+        return agendamento;
     }
 
     private static TipoAtendimentoResponse tipoResposta(TipoAtendimento tipo) {

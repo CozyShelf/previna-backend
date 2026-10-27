@@ -116,6 +116,14 @@ public class GestanteService {
                 gestante.getMedico().getNome());
     }
 
+    // Mesma regra do gestanteDoMedico, para quem já tem a gestante em mãos (ex.: a partir de um agendamento)
+    // e precisa responder com a sua própria mensagem de "não encontrado".
+    @Transactional(readOnly = true)
+    public boolean podeAcessar(Long idMedico, Gestante gestante) {
+        Medico medico = medicoRepository.findById(idMedico).orElseThrow();
+        return medico.podeVerTodasGestantes() || idMedico.equals(gestante.getMedico().getId());
+    }
+
     @Transactional
     public void concluirPrimeiroAcesso(Long idGestante, PrimeiroAcessoRequest dados, MultipartFile foto) {
         Gestante gestante = gestanteRepository.findById(idGestante).orElseThrow();
