@@ -53,6 +53,15 @@ public class Gestante extends Usuario {
         return dataProvavelParto;
     }
 
+    public int getSaldoPontos() {
+        return saldoPontos;
+    }
+
+    // Total mantido junto com o extrato (transacao_pontos): quem credita é o PontuacaoService, na confirmação
+    public void creditarPontos(int pontos) {
+        this.saldoPontos += pontos;
+    }
+
     public boolean tutorialPendente() {
         return !tutorialConcluido;
     }

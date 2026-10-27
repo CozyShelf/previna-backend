@@ -1,2 +1,4 @@
 .idea
 target/
+# Área de trabalho dos planos (superpowers): rascunho, não versionado
+.superpowers/
