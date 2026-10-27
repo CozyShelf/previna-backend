@@ -10,7 +10,7 @@ skinparam class {
 }
 
 legend top right
-  Fundo branco: tabela criada nas migrações (V1 a V10).
+  Fundo branco: tabela criada nas migrações (V1 a V11).
   Fundo cinza: tabela prevista, ainda sem migração.
   • campo obrigatório (NOT NULL)
 endlegend
@@ -127,7 +127,7 @@ entity cupom {
   * ativo : boolean
 }
 
-entity tipo_atendimento <<previsto>> {
+entity tipo_atendimento {
   * id : bigint <<PK>>
   --
   * nome : varchar
@@ -137,7 +137,7 @@ entity tipo_atendimento <<previsto>> {
   * ativo : boolean
 }
 
-entity agendamento <<previsto>> {
+entity agendamento {
   * id : bigint <<PK>>
   --
   * gestante_id : bigint <<FK>>
@@ -145,17 +145,16 @@ entity agendamento <<previsto>> {
   * atribuido_por : bigint <<FK>>
   confirmado_por : bigint <<FK>>
   * data_prevista : date
-  * status : AGENDADO | REALIZADO | CANCELADO
+  * status : AGENDADO | REALIZADO | NAO_COMPARECEU
   data_confirmacao : timestamp
   observacao : text
 }
 
-entity transacao_pontos <<previsto>> {
+entity transacao_pontos {
   * id : bigint <<PK>>
   --
   * gestante_id : bigint <<FK>>
-  agendamento_id : bigint <<FK>>
-  cupom_resgatado_id : bigint <<FK>>
+  agendamento_id : bigint <<FK>> <<UK>>
   * tipo : CREDITO | DEBITO
   * pontos : int
   fator_aplicado : decimal
@@ -222,9 +221,14 @@ medico |o--o{ agendamento : confirmado_por
 
 gestante ||--o{ transacao_pontos
 agendamento |o--o| transacao_pontos
-cupom_resgatado |o--o| transacao_pontos
 agendamento |o--o{ log_auditoria
 transacao_pontos |o--o{ log_auditoria
+
+note bottom of agendamento
+  Pendente (AGENDADO) passa a REALIZADO ou NAO_COMPARECEU,
+  só pelo médico. transacao_pontos.agendamento_id é UNIQUE:
+  a confirmação credita os pontos uma vez só.
+end note
 
 note bottom of promocao
   Sem ligação direta com produto: a promoção vale
