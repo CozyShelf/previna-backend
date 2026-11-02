@@ -10,7 +10,7 @@ skinparam class {
 }
 
 legend top right
-  Fundo branco: tabela criada nas migrações (V1 a V11).
+  Fundo branco: tabela criada nas migrações (V1 a V12).
   Fundo cinza: tabela prevista, ainda sem migração.
   • campo obrigatório (NOT NULL)
 endlegend
@@ -130,6 +130,7 @@ entity cupom {
 entity tipo_atendimento {
   * id : bigint <<PK>>
   --
+  criado_por : bigint <<FK>>
   * nome : varchar
   * categoria : EXAME | CONSULTA
   descricao : text
@@ -218,11 +219,18 @@ gestante ||--o{ agendamento
 tipo_atendimento ||--o{ agendamento
 medico ||--o{ agendamento : atribuido_por
 medico |o--o{ agendamento : confirmado_por
+medico |o--o{ tipo_atendimento : criado_por
 
 gestante ||--o{ transacao_pontos
 agendamento |o--o| transacao_pontos
+cupom_resgatado |o..o| transacao_pontos : cupom_resgatado_id (previsto)
 agendamento |o--o{ log_auditoria
 transacao_pontos |o--o{ log_auditoria
+
+note bottom of tipo_atendimento
+  Sem criado_por: tipo padrão, disponível para todos os médicos.
+  O nome é único por dono (nome, criado_por).
+end note
 
 note bottom of agendamento
   Pendente (AGENDADO) passa a REALIZADO ou NAO_COMPARECEU,

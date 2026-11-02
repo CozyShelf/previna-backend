@@ -9,7 +9,7 @@ Cada diagrama tem a sua pasta, com o fonte (`.puml`, PlantUML) e a imagem (`.png
 
 Para gerar a imagem de novo depois de editar o fonte: `java -jar plantuml.jar -tpng <pasta>/<nome>.puml` (PlantUML 1.2024.7). O modelo lógico e os casos de uso usam o layout `smetana`, que não precisa do Graphviz.
 
-No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cupom, conteúdos e auditoria); as demais seguem as migrações V1 a V11.
+No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cupom, conteúdos e auditoria); as demais seguem as migrações V1 a V12.
 
 ## Decisões
 
@@ -17,12 +17,14 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cu
   `CANCELADO` nos diagramas, mas cancelar (desmarcar antes) e não comparecer (faltar) são fatos diferentes, e só
   o segundo tem tela: o médico registra o não comparecimento. Não existe cancelamento de agendamento por ora.
 - **Catálogo de tipos de atendimento:** os 21 tipos iniciais vão na migração `V11`, e não em `db/seed`, porque
-  `db/seed` só é carregado no profile `dev` e o catálogo precisa existir em produção.
-- **Crédito único por agendamento:** `transacao_pontos.agendamento_id` é `UNIQUE`. Duas confirmações simultâneas
-  leem `AGENDADO` juntas; a segunda quebra na gravação e a transação inteira volta atrás, então o saldo nunca é
-  creditado duas vezes.
-- **Auditoria pendente:** os diagramas de cadastro e de confirmação gravam `log_auditoria`, que ainda não tem
-  migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
+  `db/seed` só é carregado no profile `dev` e o catálogo precisa existir em produção. Na `V12`, o médico passa a
+  cadastrar os próprios tipos: `criado_por` nulo é o tipo padrão, visível para todos.
+- **Crédito único por agendamento:** a resolução trava a linha do agendamento, então a segunda confirmação espera,
+  encontra o desfecho já registrado e recebe `409`. `transacao_pontos.agendamento_id` é `UNIQUE` como última barreira.
+- **Saldo de pontos:** `gestante.saldo_pontos` é atualizado junto com o extrato, com a gestante travada (a mesma trava
+  do resgate de cupom). Sem ela, créditos simultâneos de agendamentos diferentes leriam o mesmo saldo e perderiam pontos.
+- **Auditoria pendente:** os diagramas de cadastro e de confirmação marcam `log_auditoria` como previsto: ainda não
+  tem migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
   `agendamento.data_confirmacao`.
 - **Regra de negócio violada:** `409 Conflict` (`ConflitoException`); dados inválidos, `400 Bad Request`. A API não usa 422.
 - **Usuário do token:** as rotas da gestante e da empresa não levam o id do usuário no caminho (`/gestantes/pontuacao`, `/empresas/produtos`); recurso de outro usuário responde como inexistente (404).
