@@ -5,6 +5,7 @@ import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,6 +39,21 @@ public final class Filtros {
 
     public static <T> Specification<T> igual(String campo, Object valor) {
         return (raiz, consulta, cb) -> valor == null ? cb.conjunction() : cb.equal(raiz.get(campo), valor);
+    }
+
+    // Data e hora entre os dias inicial e final, os dois inteiros
+    // shortcut: os dias são contados no fuso da JVM (UTC no container), até 3 h de diferença de Brasília nas bordas; converter do fuso da gestante se o filtro precisar ser exato na virada do dia
+    public static <T> Specification<T> noPeriodo(String campo, LocalDate inicio, LocalDate fim) {
+        return (raiz, consulta, cb) -> {
+            List<Predicate> limites = new ArrayList<>();
+            if (inicio != null) {
+                limites.add(cb.greaterThanOrEqualTo(raiz.get(campo), inicio.atStartOfDay()));
+            }
+            if (fim != null) {
+                limites.add(cb.lessThan(raiz.get(campo), fim.plusDays(1).atStartOfDay()));
+            }
+            return cb.and(limites.toArray(Predicate[]::new));
+        };
     }
 
     // Função da extensão unaccent (migration V6)

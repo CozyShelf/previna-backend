@@ -53,6 +53,10 @@ public class Gestante extends Usuario {
         return dataProvavelParto;
     }
 
+    public int getSaldoPontos() {
+        return saldoPontos;
+    }
+
     public boolean tutorialPendente() {
         return !tutorialConcluido;
     }
