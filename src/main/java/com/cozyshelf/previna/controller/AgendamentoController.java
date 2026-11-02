@@ -2,6 +2,7 @@ package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
+import com.cozyshelf.previna.application.dto.response.AtendimentoDoDiaResponse;
 import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
 import com.cozyshelf.previna.application.service.AgendamentoService;
 import com.cozyshelf.previna.infrastructure.security.UsuarioAutenticado;
@@ -12,12 +13,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 // Só o médico cadastra e resolve exames e consultas; a gestante apenas consulta os seus
 @RestController
@@ -32,11 +36,18 @@ public class AgendamentoController {
     }
 
     @PostMapping
-    @Operation(summary = "Cadastra um exame ou consulta para a gestante; não credita pontos")
-    public ResponseEntity<AgendamentoResponse> cadastrar(
+    @Operation(summary = "Cadastra um ou mais exames e consultas para a gestante; não credita pontos")
+    public ResponseEntity<List<AgendamentoResponse>> cadastrar(
             @RequestBody @Valid AgendamentoRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado medico) {
         return ResponseEntity.status(HttpStatus.CREATED).body(agendamentoService.agendar(dados, medico.id()));
+    }
+
+    @GetMapping("/hoje")
+    @Operation(summary = "Lista os exames e consultas pendentes de hoje, no alcance do médico autenticado")
+    public ResponseEntity<List<AtendimentoDoDiaResponse>> deHoje(
+            @AuthenticationPrincipal UsuarioAutenticado medico) {
+        return ResponseEntity.ok(agendamentoService.listarDeHoje(medico.id()));
     }
 
     @PutMapping("/{id}/confirmar")

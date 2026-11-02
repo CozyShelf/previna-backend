@@ -1,16 +1,16 @@
 package com.cozyshelf.previna.application.dto.request;
 
-import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.time.LocalDate;
+import java.util.List;
 
-// Exame ou consulta que o médico marca para a gestante. Sem limite superior de data: marcar com antecedência
-// é decisão do médico; só o passado é recusado.
+// Um cadastro marca vários exames e consultas de uma vez para a mesma gestante, cada um com o seu tipo e a
+// sua data. Cada item vira um agendamento independente. O teto por envio limita o tamanho da requisição;
+// o médico que precisar de mais faz um segundo cadastro.
 public record AgendamentoRequest(
         @NotNull Long gestante,
-        @NotNull Long tipoAtendimento,
-        @NotNull @FutureOrPresent LocalDate dataPrevista,
-        @Size(max = 1000) String observacao
+        @NotEmpty @Size(max = 20) @Valid List<ItemAgendamentoRequest> itens
 ) {}

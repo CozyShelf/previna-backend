@@ -1,7 +1,9 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
+import com.cozyshelf.previna.application.dto.request.ItemAgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
+import com.cozyshelf.previna.application.dto.response.AtendimentoDoDiaResponse;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -13,7 +15,6 @@ import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
-import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,35 +33,35 @@ import static org.mockito.Mockito.*;
 class AgendamentoServiceTest {
     private static final LocalDate AMANHA = LocalDate.now().plusDays(1);
 
-    private final TipoAtendimentoRepository tipoRepository = mock(TipoAtendimentoRepository.class);
+    private final TipoAtendimentoService tipoService = mock(TipoAtendimentoService.class);
     private final AgendamentoRepository agendamentoRepository = mock(AgendamentoRepository.class);
     private final MedicoRepository medicoRepository = mock(MedicoRepository.class);
     private final GestanteService gestanteService = mock(GestanteService.class);
     private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
-    private final AgendamentoService service = new AgendamentoService(tipoRepository, agendamentoRepository,
+    private final AgendamentoService service = new AgendamentoService(tipoService, agendamentoRepository,
             medicoRepository, gestanteService, pontuacaoService);
 
     private final Medico medico = Campos.definir(
             new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false), "id", 7L);
     private final Gestante gestante = Campos.definir(new Gestante("Maria", "12345678909", null, "12345678909",
             "hash", medico, LocalDate.of(1995, 1, 1), "11999999999", LocalDate.now()), "id", 1L);
-    private final TipoAtendimento hemograma =
-            new TipoAtendimento(3L, "Hemograma completo", CategoriaAtendimento.EXAME, 25, true);
+    private final TipoAtendimento hemograma = Campos.definir(
+            new TipoAtendimento(null, "Hemograma completo", CategoriaAtendimento.EXAME, 25, true), "id", 3L);
+    private final TipoAtendimento consulta = Campos.definir(
+            new TipoAtendimento(7L, "Consulta puerperal", CategoriaAtendimento.CONSULTA, 50, true), "id", 4L);
 
     @BeforeEach
     void setUp() {
         when(gestanteService.gestanteDoMedico(7L, 1L)).thenReturn(gestante);
         when(medicoRepository.getReferenceById(7L)).thenReturn(medico);
-        when(agendamentoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(agendamentoRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(gestanteService.podeAcessar(7L, gestante)).thenReturn(true);
     }
 
-    private static AgendamentoRequest dados(Long tipo) {
-        return new AgendamentoRequest(1L, tipo, AMANHA, "Jejum de 8h");
-    }
-
-    private static TipoAtendimento tipo(Long id, String nome, CategoriaAtendimento categoria, int pontos) {
-        return new TipoAtendimento(id, nome, categoria, pontos, true);
+    private static AgendamentoRequest dados(Long... tipos) {
+        return new AgendamentoRequest(1L, java.util.Arrays.stream(tipos)
+                .map(tipo -> new ItemAgendamentoRequest(tipo, AMANHA, "Jejum de 8h"))
+                .toList());
     }
 
     // O id só existe depois de persistir; a ordenação usa o id como desempate, então os testes precisam dele
@@ -73,46 +74,18 @@ class AgendamentoServiceTest {
     }
 
     @Test
-    void listaSoOsTiposAtivosDaCategoria() {
-        when(tipoRepository.findByCategoriaAndAtivoTrueOrderByNomeAsc(CategoriaAtendimento.EXAME)).thenReturn(
-                List.of(tipo(1L, "Hemograma completo", CategoriaAtendimento.EXAME, 25),
-                        tipo(2L, "Urina tipo I (EAS)", CategoriaAtendimento.EXAME, 20)));
-
-        var resposta = service.listarTiposAtivos(CategoriaAtendimento.EXAME);
-
-        assertEquals(2, resposta.size());
-        assertEquals("Hemograma completo", resposta.getFirst().nome());
-        assertEquals(CategoriaAtendimento.EXAME, resposta.getFirst().categoria());
-        assertEquals(25, resposta.getFirst().pontosBase());
-        verify(tipoRepository).findByCategoriaAndAtivoTrueOrderByNomeAsc(CategoriaAtendimento.EXAME);
-        verify(tipoRepository, never()).findByAtivoTrueOrderByNomeAsc();
-    }
-
-    @Test
-    void semCategoriaListaTodosOsAtivos() {
-        when(tipoRepository.findByAtivoTrueOrderByNomeAsc()).thenReturn(
-                List.of(tipo(1L, "Consulta puerperal", CategoriaAtendimento.CONSULTA, 50),
-                        tipo(2L, "Hemograma completo", CategoriaAtendimento.EXAME, 25)));
-
-        var resposta = service.listarTiposAtivos(null);
-
-        assertEquals(2, resposta.size());
-        verify(tipoRepository).findByAtivoTrueOrderByNomeAsc();
-        verify(tipoRepository, never()).findByCategoriaAndAtivoTrueOrderByNomeAsc(any());
-    }
-
-    @Test
     void cadastraComStatusAgendadoEMedicoDoToken() {
-        when(tipoRepository.findById(3L)).thenReturn(Optional.of(hemograma));
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
 
-        var resposta = service.agendar(dados(3L), 7L);
+        var resposta = service.agendar(dados(3L), 7L).getFirst();
 
-        var salvo = ArgumentCaptor.forClass(Agendamento.class);
-        verify(agendamentoRepository).save(salvo.capture());
-        assertEquals(StatusAgendamento.AGENDADO, salvo.getValue().getStatus());
-        assertSame(medico, salvo.getValue().getAtribuidoPor());
-        assertSame(gestante, salvo.getValue().getGestante());
-        assertSame(hemograma, salvo.getValue().getTipo());
+        var salvos = ArgumentCaptor.forClass(List.class);
+        verify(agendamentoRepository).saveAll(salvos.capture());
+        var salvo = (Agendamento) salvos.getValue().getFirst();
+        assertEquals(StatusAgendamento.AGENDADO, salvo.getStatus());
+        assertSame(medico, salvo.getAtribuidoPor());
+        assertSame(gestante, salvo.getGestante());
+        assertSame(hemograma, salvo.getTipo());
         assertEquals("Hemograma completo", resposta.tipo());
         assertEquals(CategoriaAtendimento.EXAME, resposta.categoria());
         assertEquals(AMANHA, resposta.dataPrevista());
@@ -120,26 +93,35 @@ class AgendamentoServiceTest {
         assertNull(resposta.dataConfirmacao());
     }
 
-    // Um tipo desativado some do catálogo, mas o id ainda existe: o cadastro precisa recusá-lo
+    // Opção escolhida: um cadastro com vários itens vira um agendamento independente por item
     @Test
-    void recusaTipoInativo() {
-        when(tipoRepository.findById(4L)).thenReturn(Optional.of(
-                new TipoAtendimento(4L, "Exame descontinuado", CategoriaAtendimento.EXAME, 25, false)));
+    void cadastraUmAgendamentoPorItemDoFormulario() {
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
+        when(tipoService.paraAgendamento(7L, 4L)).thenReturn(consulta);
 
-        var erro = assertThrows(DadosInvalidosException.class, () -> service.agendar(dados(4L), 7L));
+        var resposta = service.agendar(dados(3L, 4L), 7L);
 
-        assertEquals("Tipo de atendimento inválido", erro.getMessage());
-        verify(agendamentoRepository, never()).save(any());
+        var salvos = ArgumentCaptor.forClass(List.class);
+        verify(agendamentoRepository).saveAll(salvos.capture());
+        assertEquals(2, salvos.getValue().size());
+        assertEquals(List.of("Hemograma completo", "Consulta puerperal"),
+                resposta.stream().map(AgendamentoResponse::tipo).toList());
+        // Cada item nasce pendente e com o próprio desfecho por resolver
+        assertEquals(List.of(StatusAgendamento.AGENDADO, StatusAgendamento.AGENDADO),
+                resposta.stream().map(AgendamentoResponse::status).toList());
     }
 
+    // Tudo na mesma transação: um tipo recusado no meio da lista não deixa metade do cadastro gravada
     @Test
-    void recusaTipoInexistente() {
-        when(tipoRepository.findById(99L)).thenReturn(Optional.empty());
+    void umItemInvalidoNaListaNaoGravaNenhumOutro() {
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
+        when(tipoService.paraAgendamento(7L, 99L))
+                .thenThrow(new DadosInvalidosException("Tipo de atendimento inválido"));
 
-        var erro = assertThrows(DadosInvalidosException.class, () -> service.agendar(dados(99L), 7L));
+        var erro = assertThrows(DadosInvalidosException.class, () -> service.agendar(dados(3L, 99L), 7L));
 
         assertEquals("Tipo de atendimento inválido", erro.getMessage());
-        verify(agendamentoRepository, never()).save(any());
+        verify(agendamentoRepository, never()).saveAll(any());
     }
 
     @Test
@@ -150,9 +132,52 @@ class AgendamentoServiceTest {
         var erro = assertThrows(NaoEncontradoException.class, () -> service.agendar(dados(3L), 8L));
 
         assertEquals("Gestante não encontrada", erro.getMessage());
-        verify(agendamentoRepository, never()).save(any());
-        // A gestante é conferida antes do tipo, como no diagrama: 404 vem antes de 400
-        verify(tipoRepository, never()).findById(any());
+        verify(agendamentoRepository, never()).saveAll(any());
+        // A gestante é conferida antes dos tipos, como no diagrama: 404 vem antes de 400
+        verify(tipoService, never()).paraAgendamento(any(), any());
+    }
+
+    // Tela inicial: só o que está pendente para hoje, na ordem de cadastro (o id), com o nome da gestante
+    @Test
+    void listaOsAtendimentosPendentesDeHoje() {
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(medico));
+        when(agendamentoRepository.findByStatusAndDataPrevistaAndGestanteMedicoIdOrderByIdAsc(
+                StatusAgendamento.AGENDADO, LocalDate.now(), 7L))
+                .thenReturn(List.of(agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.now()),
+                        agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now())));
+
+        var resposta = service.listarDeHoje(7L);
+
+        assertEquals(List.of(2L, 5L), resposta.stream().map(AtendimentoDoDiaResponse::id).toList());
+        assertEquals(1L, resposta.getFirst().gestante());
+        assertEquals("Maria", resposta.getFirst().nomeGestante());
+        assertEquals("Hemograma completo", resposta.getFirst().tipo());
+        // Sem a permissão do administrador, o médico não vê a agenda das gestantes dos outros
+        verify(agendamentoRepository, never()).findByStatusAndDataPrevistaOrderByIdAsc(any(), any());
+    }
+
+    // Com a permissão do administrador, a tela inicial mostra a agenda de todas as gestantes
+    @Test
+    void medicoQueVeTodasAsGestantesVeAAgendaInteiraDoDia() {
+        var comPermissao = Campos.definir(
+                new Medico("Dr. Bruno", "22222222222", null, "CRM-SP 2", "bruno", "hash", true), "id", 9L);
+        when(medicoRepository.findById(9L)).thenReturn(Optional.of(comPermissao));
+        when(agendamentoRepository.findByStatusAndDataPrevistaOrderByIdAsc(
+                StatusAgendamento.AGENDADO, LocalDate.now()))
+                .thenReturn(List.of(agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.now())));
+
+        assertEquals(1, service.listarDeHoje(9L).size());
+        verify(agendamentoRepository, never())
+                .findByStatusAndDataPrevistaAndGestanteMedicoIdOrderByIdAsc(any(), any(), any());
+    }
+
+    @Test
+    void diaSemNenhumAtendimentoDevolveListaVazia() {
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(medico));
+        when(agendamentoRepository.findByStatusAndDataPrevistaAndGestanteMedicoIdOrderByIdAsc(
+                StatusAgendamento.AGENDADO, LocalDate.now(), 7L)).thenReturn(List.of());
+
+        assertEquals(List.of(), service.listarDeHoje(7L));
     }
 
     // Pendentes primeiro, para o médico avaliar; depois os resolvidos, pela data prevista
@@ -202,7 +227,7 @@ class AgendamentoServiceTest {
     // O cadastro não credita nada: os pontos só saem na confirmação
     @Test
     void naoCreditaPontosNoCadastro() {
-        when(tipoRepository.findById(3L)).thenReturn(Optional.of(hemograma));
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
 
         service.agendar(dados(3L), 7L);
 
@@ -226,6 +251,31 @@ class AgendamentoServiceTest {
         assertEquals(25, resposta.pontosCreditados());
         assertEquals(25, resposta.saldoPontos());
         assertEquals(StatusAgendamento.REALIZADO, resposta.agendamento().status());
+    }
+
+    // O médico só registra o desfecho a partir do dia marcado; antes disso não há o que confirmar
+    @Test
+    void naoResolveAgendamentoAntesDaDataPrevista() {
+        var futuro = agendamento(5L, StatusAgendamento.AGENDADO, AMANHA);
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(futuro));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.confirmar(5L, 7L));
+        assertThrows(ConflitoException.class, () -> service.registrarNaoComparecimento(5L, 7L));
+
+        assertEquals("Este agendamento só pode ser resolvido a partir da data prevista", erro.getMessage());
+        assertEquals(StatusAgendamento.AGENDADO, futuro.getStatus());
+        verify(pontuacaoService, never()).creditarPorAgendamento(any());
+    }
+
+    // No próprio dia já vale: a comparação é só de data, sem horário
+    @Test
+    void resolveAgendamentoNoProprioDiaPrevisto() {
+        var hoje = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(hoje));
+
+        service.registrarNaoComparecimento(5L, 7L);
+
+        assertEquals(StatusAgendamento.NAO_COMPARECEU, hoje.getStatus());
     }
 
     @Test

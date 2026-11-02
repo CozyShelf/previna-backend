@@ -2,63 +2,56 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
+import com.cozyshelf.previna.application.dto.response.AtendimentoDoDiaResponse;
 import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
-import com.cozyshelf.previna.application.dto.response.TipoAtendimentoResponse;
 import com.cozyshelf.previna.application.exception.ConflitoException;
-import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
-import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
-import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 
 @Service
 public class AgendamentoService {
-    private final TipoAtendimentoRepository tipoRepository;
+    private final TipoAtendimentoService tipoService;
     private final AgendamentoRepository agendamentoRepository;
     private final MedicoRepository medicoRepository;
     private final GestanteService gestanteService;
     private final PontuacaoService pontuacaoService;
 
-    public AgendamentoService(TipoAtendimentoRepository tipoRepository, AgendamentoRepository agendamentoRepository,
+    public AgendamentoService(TipoAtendimentoService tipoService, AgendamentoRepository agendamentoRepository,
                               MedicoRepository medicoRepository, GestanteService gestanteService,
                               PontuacaoService pontuacaoService) {
-        this.tipoRepository = tipoRepository;
+        this.tipoService = tipoService;
         this.agendamentoRepository = agendamentoRepository;
         this.medicoRepository = medicoRepository;
         this.gestanteService = gestanteService;
         this.pontuacaoService = pontuacaoService;
     }
 
-    // Só os tipos ativos: um tipo desativado não pode mais ser escolhido, mas continua nos agendamentos antigos
-    @Transactional(readOnly = true)
-    public List<TipoAtendimentoResponse> listarTiposAtivos(CategoriaAtendimento categoria) {
-        List<TipoAtendimento> tipos = categoria == null
-                ? tipoRepository.findByAtivoTrueOrderByNomeAsc()
-                : tipoRepository.findByCategoriaAndAtivoTrueOrderByNomeAsc(categoria);
-        return tipos.stream().map(AgendamentoService::tipoResposta).toList();
-    }
-
-    // Nenhum ponto é creditado aqui: os pontos do tipo só saem quando o médico confirmar a realização
+    // Cada item vira um agendamento independente, com status e confirmação próprios. Tudo na mesma
+    // transação: um tipo inválido no meio da lista não deixa metade do cadastro gravada.
+    // Nenhum ponto é creditado aqui: os pontos do tipo só saem quando o médico confirmar a realização.
     @Transactional
-    public AgendamentoResponse agendar(AgendamentoRequest dados, Long idMedico) {
-        // A gestante é conferida antes do tipo: 404 antes de 400, como no diagrama
+    public List<AgendamentoResponse> agendar(AgendamentoRequest dados, Long idMedico) {
+        // A gestante é conferida antes dos tipos: 404 antes de 400, como no diagrama
         Gestante gestante = gestanteService.gestanteDoMedico(idMedico, dados.gestante());
-        TipoAtendimento tipo = tipoRepository.findById(dados.tipoAtendimento())
-                .filter(TipoAtendimento::isAtivo)
-                .orElseThrow(() -> new DadosInvalidosException("Tipo de atendimento inválido"));
+        Medico medico = medicoRepository.getReferenceById(idMedico);
 
-        return resposta(agendamentoRepository.save(new Agendamento(gestante, tipo,
-                medicoRepository.getReferenceById(idMedico), dados.dataPrevista(), dados.observacao())));
+        List<Agendamento> novos = dados.itens().stream()
+                .map(item -> new Agendamento(gestante, tipoService.paraAgendamento(idMedico, item.tipoAtendimento()),
+                        medico, item.dataPrevista(), item.observacao()))
+                .toList();
+        return agendamentoRepository.saveAll(novos).stream().map(AgendamentoService::resposta).toList();
     }
 
     // Pendentes primeiro (a ordem do enum é a de exibição), depois pela data prevista; o id desempata.
@@ -79,6 +72,22 @@ public class AgendamentoService {
         return agendamentoRepository.findByGestanteId(idGestante).stream()
                 .sorted(ORDEM)
                 .map(AgendamentoService::resposta)
+                .toList();
+    }
+
+    // Tela inicial do médico: o que está pendente para hoje, no mesmo alcance das demais telas dele
+    // (as gestantes que acompanha, ou todas quando o administrador deu essa permissão).
+    @Transactional(readOnly = true)
+    public List<AtendimentoDoDiaResponse> listarDeHoje(Long idMedico) {
+        LocalDate hoje = LocalDate.now();
+        List<Agendamento> doDia = medicoRepository.findById(idMedico).orElseThrow().podeVerTodasGestantes()
+                ? agendamentoRepository.findByStatusAndDataPrevistaOrderByIdAsc(StatusAgendamento.AGENDADO, hoje)
+                : agendamentoRepository.findByStatusAndDataPrevistaAndGestanteMedicoIdOrderByIdAsc(
+                        StatusAgendamento.AGENDADO, hoje, idMedico);
+
+        return doDia.stream()
+                .map(a -> new AtendimentoDoDiaResponse(a.getId(), a.getGestante().getId(),
+                        a.getGestante().getNome(), a.getTipo().getNome(), a.getTipo().getCategoria()))
                 .toList();
     }
 
@@ -111,12 +120,13 @@ public class AgendamentoService {
         if (!agendamento.pendente()) {
             throw new ConflitoException("Este agendamento já foi resolvido");
         }
+        // Só a data, sem horário: no próprio dia o desfecho já vale. O fuso é o padrão da JVM,
+        // fixado em America/Sao_Paulo na PrevinaApplication.
+        if (agendamento.getDataPrevista().isAfter(LocalDate.now())) {
+            throw new ConflitoException("Este agendamento só pode ser resolvido a partir da data prevista");
+        }
         agendamento.registrarDesfecho(desfecho, medicoRepository.getReferenceById(idMedico));
         return agendamento;
-    }
-
-    private static TipoAtendimentoResponse tipoResposta(TipoAtendimento tipo) {
-        return new TipoAtendimentoResponse(tipo.getId(), tipo.getNome(), tipo.getCategoria(), tipo.getPontosBase());
     }
 
     static AgendamentoResponse resposta(Agendamento agendamento) {

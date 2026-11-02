@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.domain.repository;
 
 import com.cozyshelf.previna.domain.model.Agendamento;
+import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,4 +30,16 @@ public interface AgendamentoRepository extends JpaRepository<Agendamento, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Agendamento a where a.id = :id")
     Optional<Agendamento> findParaResolver(@Param("id") Long id);
+
+    // Agenda do dia do médico que vê todas as gestantes. Sem horário na tabela, o id é a ordem de cadastro.
+    @EntityGraph(attributePaths = {"tipo", "gestante"})
+    List<Agendamento> findByStatusAndDataPrevistaOrderByIdAsc(StatusAgendamento status, LocalDate dia);
+
+    // Agenda do dia restrita às gestantes que o médico acompanha
+    @EntityGraph(attributePaths = {"tipo", "gestante"})
+    List<Agendamento> findByStatusAndDataPrevistaAndGestanteMedicoIdOrderByIdAsc(
+            StatusAgendamento status, LocalDate dia, Long idMedico);
+
+    // Um tipo já usado não pode ser excluído: o histórico da gestante perderia o nome do que foi feito
+    boolean existsByTipoId(Long tipoId);
 }
