@@ -1,8 +1,8 @@
 package com.cozyshelf.previna.domain.model;
 
-// AGENDADO passa a REALIZADO quando o médico confirma, ou a CANCELADO
+// A ordem é a de exibição: pendentes primeiro, para o médico avaliar
 public enum StatusAgendamento {
     AGENDADO,
     REALIZADO,
-    CANCELADO
+    NAO_COMPARECEU
 }

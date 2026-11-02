@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+// Extrato de pontos da gestante. Um crédito por agendamento confirmado (agendamento_id é UNIQUE no banco),
+// e fator_aplicado guarda o fator usado para o extrato continuar explicável se a regra de ponderação mudar.
 @Entity
 @Table(name = "transacao_pontos")
 public class TransacaoPontos {
@@ -12,25 +14,27 @@ public class TransacaoPontos {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long gestanteId;
-
-    // Só no crédito: a consulta ou exame confirmado que gerou os pontos
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "gestante_id")
+    private Gestante gestante;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agendamento_id")
     private Agendamento agendamento;
 
     @Enumerated(EnumType.STRING)
     private TipoTransacao tipo;
-    // Sempre positivo; o tipo diz se soma ou subtrai do saldo
-    private Integer pontos;
+
+    private int pontos;
     private BigDecimal fatorAplicado;
     private LocalDateTime dataHora;
 
     protected TransacaoPontos() {
     }
 
-    public TransacaoPontos(Long gestanteId, Agendamento agendamento, TipoTransacao tipo, Integer pontos,
+    public TransacaoPontos(Gestante gestante, Agendamento agendamento, TipoTransacao tipo, int pontos,
                            BigDecimal fatorAplicado) {
-        this.gestanteId = gestanteId;
+        this.gestante = gestante;
         this.agendamento = agendamento;
         this.tipo = tipo;
         this.pontos = pontos;
@@ -50,8 +54,12 @@ public class TransacaoPontos {
         return tipo;
     }
 
-    public Integer getPontos() {
+    public int getPontos() {
         return pontos;
+    }
+
+    public BigDecimal getFatorAplicado() {
+        return fatorAplicado;
     }
 
     public LocalDateTime getDataHora() {
@@ -60,6 +68,6 @@ public class TransacaoPontos {
 
     // shortcut: o débito ainda não aponta para o cupom (cupom_resgatado vem com o resgate); trocar pela descrição do cupom resgatado
     public String getDescricao() {
-        return agendamento != null ? agendamento.getTipoAtendimento().getNome() : "Resgate de cupom";
+        return agendamento != null ? agendamento.getTipo().getNome() : "Resgate de cupom";
     }
 }

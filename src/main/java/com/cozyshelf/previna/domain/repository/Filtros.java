@@ -42,7 +42,7 @@ public final class Filtros {
     }
 
     // Data e hora entre os dias inicial e final, os dois inteiros
-    // shortcut: os dias são contados no fuso da JVM (UTC no container), até 3 h de diferença de Brasília nas bordas; converter do fuso da gestante se o filtro precisar ser exato na virada do dia
+    // shortcut: os dias são contados no fuso de Brasília (o da JVM, fixado na PrevinaApplication); converter do fuso da gestante se o filtro precisar ser exato na virada do dia fora dele
     public static <T> Specification<T> noPeriodo(String campo, LocalDate inicio, LocalDate fim) {
         return (raiz, consulta, cb) -> {
             List<Predicate> limites = new ArrayList<>();

@@ -4,11 +4,14 @@ import com.cozyshelf.previna.application.dto.request.AtualizacaoPerfilGestanteRe
 import com.cozyshelf.previna.application.dto.request.ListagemRequest;
 import com.cozyshelf.previna.application.dto.request.PreCadastroGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
+import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.dto.response.CredenciaisTemporariasResponse;
+import com.cozyshelf.previna.application.dto.response.GestanteDetalheResponse;
 import com.cozyshelf.previna.application.dto.response.GestanteResumoResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PerfilGestanteResponse;
 import com.cozyshelf.previna.application.dto.response.TokenResponse;
+import com.cozyshelf.previna.application.service.AgendamentoService;
 import com.cozyshelf.previna.application.service.AuthService;
 import com.cozyshelf.previna.application.service.GestanteService;
 import com.cozyshelf.previna.domain.model.StatusConta;
@@ -23,6 +26,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,6 +35,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 
 @RestController
 @RequestMapping("/gestantes")
@@ -38,10 +44,13 @@ import org.springframework.web.multipart.MultipartFile;
 public class GestanteController {
     private final GestanteService gestanteService;
     private final AuthService authService;
+    private final AgendamentoService agendamentoService;
 
-    public GestanteController(GestanteService gestanteService, AuthService authService) {
+    public GestanteController(GestanteService gestanteService, AuthService authService,
+                              AgendamentoService agendamentoService) {
         this.gestanteService = gestanteService;
         this.authService = authService;
+        this.agendamentoService = agendamentoService;
     }
 
     @GetMapping
@@ -62,6 +71,31 @@ public class GestanteController {
             @RequestBody @Valid PreCadastroGestanteRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado medico) {
         return ResponseEntity.status(HttpStatus.CREATED).body(gestanteService.preCadastrar(dados, medico.id()));
+    }
+
+    // Rota literal: o Spring a casa antes de /gestantes/{id}, como já acontece com /perfil e /foto
+    @GetMapping("/agendamentos")
+    @PreAuthorize("hasRole('GESTANTE')")
+    @Operation(summary = "Lista os exames e consultas da gestante autenticada, pendentes primeiro")
+    public ResponseEntity<List<AgendamentoResponse>> meusAgendamentos(
+            @AuthenticationPrincipal UsuarioAutenticado gestante) {
+        return ResponseEntity.ok(agendamentoService.listarDaGestanteAutenticada(gestante.id()));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasRole('MEDICO')")
+    @Operation(summary = "Retorna os dados de uma gestante ao alcance do médico autenticado")
+    public ResponseEntity<GestanteDetalheResponse> buscar(@PathVariable Long id,
+                                                          @AuthenticationPrincipal UsuarioAutenticado medico) {
+        return ResponseEntity.ok(gestanteService.buscarDetalhe(medico.id(), id));
+    }
+
+    @GetMapping("/{id}/agendamentos")
+    @PreAuthorize("hasRole('MEDICO')")
+    @Operation(summary = "Lista os exames e consultas da gestante, pendentes primeiro")
+    public ResponseEntity<List<AgendamentoResponse>> agendamentosDaGestante(
+            @PathVariable Long id, @AuthenticationPrincipal UsuarioAutenticado medico) {
+        return ResponseEntity.ok(agendamentoService.listarDaGestante(medico.id(), id));
     }
 
     // Multipart para levar a foto (opcional) junto com os dados

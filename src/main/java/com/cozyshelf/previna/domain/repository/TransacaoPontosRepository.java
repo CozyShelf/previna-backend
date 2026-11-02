@@ -14,9 +14,9 @@ import java.util.List;
 public interface TransacaoPontosRepository extends JpaRepository<TransacaoPontos, Long>,
         JpaSpecificationExecutor<TransacaoPontos> {
     @Override
-    @EntityGraph(attributePaths = "agendamento.tipoAtendimento")
+    @EntityGraph(attributePaths = "agendamento.tipo")
     List<TransacaoPontos> findAll(Specification<TransacaoPontos> filtro, Sort ordem);
 
-    @EntityGraph(attributePaths = "agendamento.tipoAtendimento")
+    @EntityGraph(attributePaths = "agendamento.tipo")
     List<TransacaoPontos> findByGestanteIdAndAgendamentoStatus(Long gestanteId, StatusAgendamento status, Sort ordem);
 }
