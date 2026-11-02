@@ -15,6 +15,8 @@ import com.cozyshelf.previna.domain.repository.DadosSocioeconomicosRepository;
 import com.cozyshelf.previna.domain.repository.Filtros;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
 import com.cozyshelf.previna.domain.repository.TransacaoPontosRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -34,13 +36,16 @@ public class PontuacaoService {
     private final TransacaoPontosRepository transacaoRepository;
     private final DadosSocioeconomicosRepository dadosRepository;
     private final GestanteRepository gestanteRepository;
+    private final EntityManager entityManager;
 
     public PontuacaoService(TransacaoPontosRepository transacaoRepository,
                             DadosSocioeconomicosRepository dadosRepository,
-                            GestanteRepository gestanteRepository) {
+                            GestanteRepository gestanteRepository,
+                            EntityManager entityManager) {
         this.transacaoRepository = transacaoRepository;
         this.dadosRepository = dadosRepository;
         this.gestanteRepository = gestanteRepository;
+        this.entityManager = entityManager;
     }
 
     // Crédito pela realização de um exame ou consulta.
@@ -48,6 +53,9 @@ public class PontuacaoService {
     // serem gravados juntos ou não serem gravados.
     public int creditarPorAgendamento(Agendamento agendamento) {
         Gestante gestante = agendamento.getGestante();
+        // Trava e relê a linha: créditos simultâneos de agendamentos diferentes leriam o mesmo saldo e um se perderia.
+        // Uma consulta com @Lock não bastaria: a gestante já está carregada, e o Hibernate manteria o saldo antigo.
+        entityManager.refresh(gestante, LockModeType.PESSIMISTIC_WRITE);
         // Gestante sem dados socioeconômicos usa o fator neutro; o fator é 1,00 até a regra ser definida
         BigDecimal fator = dadosRepository.findById(gestante.getId())
                 .map(DadosSocioeconomicos::getFatorPonderacao)

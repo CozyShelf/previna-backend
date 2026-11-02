@@ -14,6 +14,8 @@ import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.DadosSocioeconomicosRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
 import com.cozyshelf.previna.domain.repository.TransacaoPontosRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Sort;
@@ -33,8 +35,9 @@ class PontuacaoServiceTest {
     private final TransacaoPontosRepository transacaoRepository = mock(TransacaoPontosRepository.class);
     private final DadosSocioeconomicosRepository dadosRepository = mock(DadosSocioeconomicosRepository.class);
     private final GestanteRepository gestanteRepository = mock(GestanteRepository.class);
+    private final EntityManager entityManager = mock(EntityManager.class);
     private final PontuacaoService service =
-            new PontuacaoService(transacaoRepository, dadosRepository, gestanteRepository);
+            new PontuacaoService(transacaoRepository, dadosRepository, gestanteRepository, entityManager);
 
     private final Medico medico = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
     private final Gestante gestante = Campos.definir(
@@ -97,6 +100,20 @@ class PontuacaoServiceTest {
         // 25 × 1,01 = 25,25 -> 25
         assertEquals(25, service.creditarPorAgendamento(agendamento));
         verify(transacaoRepository).save(any());
+    }
+
+    @Test
+    void travaEReleAGestanteAntesDeSomarAoSaldo() {
+        when(dadosRepository.findById(1L)).thenReturn(Optional.empty());
+        doAnswer(chamada -> {
+            // Outro crédito gravou enquanto este esperava a trava: o saldo relido é a base da soma
+            gestante.creditarPontos(100);
+            return null;
+        }).when(entityManager).refresh(gestante, LockModeType.PESSIMISTIC_WRITE);
+
+        service.creditarPorAgendamento(agendamento);
+
+        assertEquals(125, gestante.getSaldoPontos());
     }
 
     private TransacaoPontos credito(int pontos) {
