@@ -41,6 +41,10 @@ public class Gestante extends Usuario {
         return medico;
     }
 
+    public LocalDate getDataNascimento() {
+        return dataNascimento;
+    }
+
     public String getTelefone() {
         return telefone;
     }
@@ -51,6 +55,15 @@ public class Gestante extends Usuario {
 
     public LocalDate getDataProvavelParto() {
         return dataProvavelParto;
+    }
+
+    public int getSaldoPontos() {
+        return saldoPontos;
+    }
+
+    // Total mantido junto com o extrato (transacao_pontos): quem credita é o PontuacaoService, na confirmação
+    public void creditarPontos(int pontos) {
+        this.saldoPontos += pontos;
     }
 
     public boolean tutorialPendente() {

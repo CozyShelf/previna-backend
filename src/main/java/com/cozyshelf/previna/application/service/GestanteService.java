@@ -5,10 +5,12 @@ import com.cozyshelf.previna.application.dto.request.ListagemRequest;
 import com.cozyshelf.previna.application.dto.request.PreCadastroGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.dto.response.CredenciaisTemporariasResponse;
+import com.cozyshelf.previna.application.dto.response.GestanteDetalheResponse;
 import com.cozyshelf.previna.application.dto.response.GestanteResumoResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PerfilGestanteResponse;
 import com.cozyshelf.previna.application.exception.ConflitoException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.DadosSocioeconomicos;
 import com.cozyshelf.previna.domain.model.FotoGestante;
 import com.cozyshelf.previna.domain.model.Gestante;
@@ -92,6 +94,34 @@ public class GestanteService {
                 .map(g -> new GestanteResumoResponse(g.getId(), g.getNome(), g.getCpf(), g.getTelefone(),
                         g.getDum(), g.getDataProvavelParto(), g.primeiroAcessoPendente(),
                         g.getMedico().getNome())));
+    }
+
+    // Alcance do médico sobre uma gestante: a mesma regra da listagem. Sem a permissão do administrador,
+    // o médico só enxerga as gestantes que acompanha.
+    @Transactional(readOnly = true)
+    public Gestante gestanteDoMedico(Long idMedico, Long idGestante) {
+        Medico medico = medicoRepository.findById(idMedico).orElseThrow();
+        return (medico.podeVerTodasGestantes()
+                ? gestanteRepository.findById(idGestante)
+                : gestanteRepository.findByIdAndMedicoId(idGestante, idMedico))
+                .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
+    }
+
+    @Transactional(readOnly = true)
+    public GestanteDetalheResponse buscarDetalhe(Long idMedico, Long idGestante) {
+        Gestante gestante = gestanteDoMedico(idMedico, idGestante);
+        return new GestanteDetalheResponse(gestante.getId(), gestante.getNome(), gestante.getCpf(),
+                gestante.getTelefone(), gestante.getEmail(), gestante.getDataNascimento(), gestante.getDum(),
+                gestante.getDataProvavelParto(), gestante.getSaldoPontos(), gestante.primeiroAcessoPendente(),
+                gestante.getMedico().getNome());
+    }
+
+    // Mesma regra do gestanteDoMedico, para quem já tem a gestante em mãos (ex.: a partir de um agendamento)
+    // e precisa responder com a sua própria mensagem de "não encontrado".
+    @Transactional(readOnly = true)
+    public boolean podeAcessar(Long idMedico, Gestante gestante) {
+        Medico medico = medicoRepository.findById(idMedico).orElseThrow();
+        return medico.podeVerTodasGestantes() || idMedico.equals(gestante.getMedico().getId());
     }
 
     @Transactional

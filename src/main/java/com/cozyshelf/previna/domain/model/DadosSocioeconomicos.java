@@ -33,6 +33,10 @@ public class DadosSocioeconomicos {
         this.beneficiariaProgramaSocial = beneficiariaProgramaSocial;
     }
 
+    public BigDecimal getFatorPonderacao() {
+        return fatorPonderacao;
+    }
+
     public Escolaridade getEscolaridade() {
         return escolaridade;
     }

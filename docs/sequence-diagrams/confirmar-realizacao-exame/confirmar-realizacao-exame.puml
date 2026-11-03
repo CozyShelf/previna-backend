@@ -1,9 +1,10 @@
 @startuml confirmar-realizacao-exame
-title Confirmar Realização de Exame ou Consulta (Médico)
+title Confirmar Realização ou Registrar Não Comparecimento (Médico)
 autonumber
 
 actor "Médico" as Medico
-boundary "Tela de Agendamentos" as Tela
+boundary "Página da Gestante" as Tela
+control "GestanteController" as GestanteController
 control "AgendamentoController" as Controller
 participant "AgendamentoService" as Service
 participant "PontuacaoService" as Pontuacao
@@ -11,50 +12,74 @@ database "Banco de Dados" as BD
 
 note over Medico, Controller
     Requer médico autenticado (perfil MEDICO); outros perfis recebem 403 Forbidden.
-    O médico vem do token: só confirma agendamentos das gestantes que acompanha.
+    O médico vem do token: só resolve agendamentos das gestantes ao seu alcance
+    (as que acompanha, ou todas quando o administrador deu essa permissão).
 end note
 
-Medico -> Tela : Acessa "Agendamentos"
-Tela -> Controller : GET /agendamentos?status=AGENDADO
-Controller -> Service : listarAgendamentos(idMedico do token, AGENDADO)
-Service -> BD : buscarAgendamentos(idMedico, status = AGENDADO)
+Medico -> Tela : Abre a gestante pela lista ou pela agenda do dia\n(GET /agendamentos/hoje)
+Tela -> GestanteController : GET /gestantes/{id}/agendamentos
+GestanteController -> Service : listarDaGestante(idMedico do token, idGestante)
+Service -> BD : buscarAgendamentos(idGestante)
 BD --> Service : lista de agendamentos
-Service --> Controller : lista de agendamentos
-Controller --> Tela : 200 OK
-Tela --> Medico : Exibe agendamentos ainda não realizados
+Service --> GestanteController : agendamentos, pendentes primeiro
+GestanteController --> Tela : 200 OK
+Tela --> Medico : Exibe os agendamentos; as ações aparecem\nnos pendentes a partir da data prevista
 
-Medico -> Tela : Seleciona agendamento e confirma presença da gestante
-Tela -> Controller : PUT /agendamentos/{id}/confirmar
-Controller -> Service : confirmarRealizacao(idAgendamento, idMedico do token)
-Service -> BD : buscarAgendamento(idAgendamento, idMedico)
-BD --> Service : agendamento (com o tipo de atendimento) ou nada
+alt médico confirma a presença da gestante
+    Medico -> Tela : Confirma a presença
+    Tela -> Controller : PUT /agendamentos/{id}/confirmar
+    Controller -> Service : confirmar(idAgendamento, idMedico do token)
+    Service -> BD : travarAgendamento(idAgendamento)\n(SELECT ... FOR UPDATE)
+    BD --> Service : agendamento ou nada
 
-alt agendamento inexistente ou de gestante que o médico não acompanha
-    Service --> Controller : Erro: agendamento não encontrado
-    Controller --> Tela : 404 Not Found
-    Tela --> Medico : Exibe "Agendamento não encontrado"
-else agendamento já REALIZADO ou CANCELADO
-    Service --> Controller : Erro: agendamento não pode ser confirmado
-    Controller --> Tela : 409 Conflict
-    Tela --> Medico : Exibe "Este agendamento já foi confirmado ou cancelado"
-else agendamento com status AGENDADO
-    Service -> BD : atualizarStatus(idAgendamento, REALIZADO,\nconfirmadoPor = idMedico, dataConfirmacao = agora)
-    Service -> Pontuacao : creditarPontos(idGestante, tipoAtendimento, idAgendamento)
-    Pontuacao -> BD : buscarFatorPonderacao(idGestante)
-    BD --> Pontuacao : dados_socioeconomicos.fator_ponderacao
-    Pontuacao -> Pontuacao : pontos = arredondar(tipo_atendimento.pontos_base\n× fator_ponderacao)
-    Pontuacao -> BD : registrarTransacao(tipo = CREDITO, pontos,\nfator_aplicado = fator_ponderacao, idAgendamento)
-    Pontuacao -> BD : atualizarSaldo(idGestante, +pontos)
-    BD --> Pontuacao : saldo atualizado
-    Pontuacao --> Service : pontos creditados
-    Service -> BD : registrarLog(idMedico, agendamento, transação,\nevento = AGENDAMENTO_CONFIRMADO)
-    Service --> Controller : confirmação realizada
+    alt agendamento inexistente ou de gestante fora do alcance do médico
+        Service --> Controller : Erro: agendamento não encontrado
+        Controller --> Tela : 404 Not Found
+        Tela --> Medico : Exibe "Exame ou consulta não encontrado"
+    else agendamento já REALIZADO ou NAO_COMPARECEU
+        Service --> Controller : Erro: agendamento já resolvido
+        Controller --> Tela : 409 Conflict
+        Tela --> Medico : Exibe "Este exame ou consulta já foi resolvido"
+    else data prevista ainda não chegou
+        Service --> Controller : Erro: só a partir da data prevista
+        Controller --> Tela : 409 Conflict
+        Tela --> Medico : Exibe o conflito
+    else agendamento com status AGENDADO
+        Service -> BD : atualizarStatus(idAgendamento, REALIZADO,\nconfirmadoPor = idMedico, dataConfirmacao = agora)
+        Service -> Pontuacao : creditarPorAgendamento(agendamento)
+        Pontuacao -> BD : travarGestante(idGestante)\n(SELECT ... FOR UPDATE)
+        BD --> Pontuacao : gestante com o saldo atual
+        Pontuacao -> BD : buscarFatorPonderacao(idGestante)
+        BD --> Pontuacao : dados_socioeconomicos.fator_ponderacao
+        Pontuacao -> Pontuacao : pontos = arredondar(tipo_atendimento.pontos_base\n× fator_ponderacao)
+        Pontuacao -> BD : registrarTransacao(tipo = CREDITO, pontos,\nfator_aplicado = fator_ponderacao, idAgendamento)
+        Pontuacao -> BD : atualizarSaldo(idGestante, +pontos)
+        BD --> Pontuacao : saldo atualizado
+        Pontuacao --> Service : pontos creditados
+        Service -> BD : registrarLog(idMedico, agendamento, transação,\nevento = AGENDAMENTO_CONFIRMADO)\n(previsto: log_auditoria ainda não tem migração)
+        Service --> Controller : agendamento, pontos creditados e saldo
+        Controller --> Tela : 200 OK
+        Tela --> Medico : Exibe "Presença confirmada e <n> pontos creditados"
+    end
+else gestante não compareceu
+    Medico -> Tela : Registra o não comparecimento
+    Tela -> Controller : PUT /agendamentos/{id}/nao-compareceu
+    Controller -> Service : registrarNaoComparecimento(idAgendamento, idMedico do token)
+    Service -> BD : travarAgendamento(idAgendamento)\n(SELECT ... FOR UPDATE)
+    BD --> Service : agendamento ou nada
+    note over Controller, Service
+        Mesmos 404 e 409 da confirmação.
+    end note
+    Service -> BD : atualizarStatus(idAgendamento, NAO_COMPARECEU,\nconfirmadoPor = idMedico, dataConfirmacao = agora)
+    Service --> Controller : agendamento
     Controller --> Tela : 200 OK
-    Tela --> Medico : Exibe "Presença confirmada e <n> pontos creditados"
+    Tela --> Medico : Exibe "Não comparecimento registrado", sem crédito de pontos
 end
 
 note over Medico, BD
     Status, transação de pontos, saldo e log na mesma transação: ou tudo é gravado, ou nada.
+    As travas serializam as confirmações: a do agendamento impede dois desfechos para o mesmo agendamento,
+    e a da gestante impede que créditos simultâneos de agendamentos diferentes percam pontos do saldo.
     O fator de ponderação hoje é neutro (1,00) até a regra ser definida; gestante sem dados socioeconômicos usa 1,00.
     fator_aplicado guarda o fator usado, para o extrato continuar explicável se a regra mudar.
 end note

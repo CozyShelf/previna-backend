@@ -10,6 +10,7 @@ actor "Gestante" as Gestante
 rectangle "Previna - Módulo Gestante" {
   usecase "Acessar Informações\nEducativas sobre Pré-natal" as Educativas
   usecase "Visualizar Cupons\nResgatados" as Resgatados
+  usecase "Visualizar Exames\ne Consultas" as Agendamentos
   usecase "Consultar Pontuação" as Pontuacao
   usecase "Visualizar Cupons\nDisponíveis" as Disponiveis
   usecase "Resgatar Cupom" as Resgatar
@@ -20,6 +21,7 @@ rectangle "Previna - Módulo Gestante" {
 
 Gestante --> Educativas
 Gestante --> Resgatados
+Gestante --> Agendamentos
 Gestante --> Pontuacao
 Gestante --> Disponiveis
 

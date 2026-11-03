@@ -8,7 +8,12 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Optional;
+
 public interface GestanteRepository extends JpaRepository<Gestante, Long>, JpaSpecificationExecutor<Gestante> {
+    // Gestante de outro médico não volta na busca: para quem não tem a permissão, ela responde como inexistente
+    Optional<Gestante> findByIdAndMedicoId(Long id, Long medicoId);
+
     // Traz o médico responsável na mesma consulta: a listagem mostra o nome dele
     @Override
     @EntityGraph(attributePaths = "medico")

@@ -1,5 +1,5 @@
 @startuml confirmacao-pontos
-title Confirmação de exame ou consulta e crédito de pontos (previsto)
+title Confirmação de exame ou consulta e crédito de pontos
 
 |AgendamentoController|
 start
@@ -7,9 +7,10 @@ start
 @PreAuthorize MEDICO;
 
 |AgendamentoService|
-:busca o agendamento pelo id e pelo médico do token
-(gestante acompanhada por ele), com o tipo de atendimento;
-if (não encontrado?) then (sim)
+:trava o agendamento pelo id
+(SELECT ... FOR UPDATE);
+if (não encontrado ou gestante fora
+do alcance do médico do token?) then (sim)
   |AgendamentoController|
   :404 Not Found;
   stop
@@ -18,7 +19,15 @@ endif
 
 |AgendamentoService|
 if (status diferente de AGENDADO
-(já REALIZADO ou CANCELADO)?) then (sim)
+(já REALIZADO ou NAO_COMPARECEU)?) then (sim)
+  |AgendamentoController|
+  :409 Conflict;
+  stop
+else (não)
+endif
+
+|AgendamentoService|
+if (data prevista depois de hoje?) then (sim)
   |AgendamentoController|
   :409 Conflict;
   stop
@@ -31,6 +40,8 @@ confirmado_por = médico autenticado
 data_confirmacao = agora;
 
 |PontuacaoService|
+:trava e relê a gestante
+(SELECT ... FOR UPDATE);
 :pontos = arredondar(tipo_atendimento.pontos_base
 × dados_socioeconomicos.fator_ponderacao)
 (fator 1,00 sem dados socioeconômicos);
@@ -39,18 +50,22 @@ data_confirmacao = agora;
 :gestante.saldo_pontos += pontos;
 
 |AgendamentoService|
-:insere log_auditoria
+:insere log_auditoria (previsto)
 (médico, agendamento, transação,
 evento = AGENDAMENTO_CONFIRMADO);
 
 |AgendamentoController|
-:200 OK;
+:200 OK
+(agendamento, pontos creditados e saldo);
 stop
 
 note right
   Status, transação de pontos, saldo e log
   na mesma transação (@Transactional):
   ou tudo é gravado, ou nada.
+  A trava da gestante é a mesma do resgate:
+  créditos e débitos simultâneos não
+  perdem pontos do saldo.
   O cadastro do agendamento
   (POST /agendamentos) não credita pontos.
 end note

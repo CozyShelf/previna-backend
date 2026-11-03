@@ -14,6 +14,9 @@ rectangle "Previna - Médico" {
   usecase "Cadastrar Consulta" as CadastrarConsulta
   usecase "Confirmar Realização\nde Exame" as ConfirmarExame
   usecase "Confirmar Realização\nde Consulta" as ConfirmarConsulta
+  usecase "Registrar Não\nComparecimento" as NaoCompareceu
+  usecase "Visualizar Agenda\ndo Dia" as AgendaDia
+  usecase "Gerenciar Tipos de\nExame e Consulta" as GerenciarTipos
   usecase "Cadastrar Gestante" as CadastrarGestante
   usecase "Realizar Primeiro Acesso" as PrimeiroAcesso
   usecase "Verificar Presença\nda Gestante" as VerificarPresenca
@@ -27,6 +30,9 @@ Medico --> CadastrarExame
 Medico --> CadastrarConsulta
 Medico --> ConfirmarExame
 Medico --> ConfirmarConsulta
+Medico --> NaoCompareceu
+Medico --> AgendaDia
+Medico --> GerenciarTipos
 Medico --> CadastrarGestante
 Gestante --> PrimeiroAcesso
 

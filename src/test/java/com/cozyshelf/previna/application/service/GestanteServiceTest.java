@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.request.ListagemRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Escolaridade;
 import com.cozyshelf.previna.domain.model.FotoGestante;
 import com.cozyshelf.previna.domain.model.Gestante;
@@ -194,5 +195,51 @@ class GestanteServiceTest {
         assertThrows(ConflitoException.class, () -> service.atualizarPerfil(1L,
                 new AtualizacaoPerfilGestanteRequest("11912345678", "medico@previna.com", false), null));
         assertEquals("11999999999", gestante.getTelefone());
+    }
+
+    // O médico que acompanha a gestante vê o detalhe, com o saldo de pontos e o nome do responsável
+    @Test
+    void detalheTrazSaldoDePontosEMedicoResponsavel() {
+        Medico ana = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
+        Gestante acompanhada = new Gestante("Maria", "12345678909", "maria@exemplo.com", "12345678909", "hash",
+                ana, LocalDate.of(1995, 1, 1), "11999999999", LocalDate.of(2026, 1, 1));
+        acompanhada.creditarPontos(75);
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
+        when(gestanteRepository.findByIdAndMedicoId(1L, 7L)).thenReturn(Optional.of(acompanhada));
+
+        var detalhe = service.buscarDetalhe(7L, 1L);
+
+        assertEquals("Maria", detalhe.nome());
+        assertEquals("maria@exemplo.com", detalhe.email());
+        assertEquals(75, detalhe.saldoPontos());
+        assertEquals("Dra. Ana", detalhe.medico());
+        assertEquals(LocalDate.of(2026, 1, 1), detalhe.dum());
+        assertTrue(detalhe.primeiroAcessoPendente());
+    }
+
+    // Gestante de outro médico responde igual a id inexistente: nada revela que ela existe
+    @Test
+    void detalheDeGestanteDeOutroMedicoRespondeComoInexistente() {
+        Medico ana = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
+        when(gestanteRepository.findByIdAndMedicoId(2L, 7L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.buscarDetalhe(7L, 2L));
+
+        assertEquals("Gestante não encontrada", erro.getMessage());
+    }
+
+    // Permissão dada pelo administrador: alcança gestante de qualquer médico
+    @Test
+    void medicoComPermissaoVeGestanteDeOutroMedico() {
+        Medico supervisor = new Medico("Dr. Bruno", "22222222222", null, "CRM-SP 2", "bruno", "hash", true);
+        Medico outro = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
+        Gestante deOutro = new Gestante("Joana", "98765432100", null, "98765432100", "hash",
+                outro, LocalDate.of(1998, 5, 2), "11988888888", LocalDate.of(2026, 2, 1));
+        when(medicoRepository.findById(9L)).thenReturn(Optional.of(supervisor));
+        when(gestanteRepository.findById(3L)).thenReturn(Optional.of(deOutro));
+
+        assertEquals("Dra. Ana", service.buscarDetalhe(9L, 3L).medico());
+        verify(gestanteRepository, never()).findByIdAndMedicoId(any(), any());
     }
 }
