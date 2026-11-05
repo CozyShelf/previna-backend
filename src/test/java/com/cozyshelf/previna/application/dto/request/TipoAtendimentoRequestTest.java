@@ -8,7 +8,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TipoAtendimentoRequestTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
@@ -27,20 +26,13 @@ class TipoAtendimentoRequestTest {
             "'   ', EXAME, 30, false",
     })
     void validaCampos(String nome, CategoriaAtendimento categoria, Integer pontosBase, boolean valido) {
-        var dados = new TipoAtendimentoRequest(nome, categoria, pontosBase, true);
+        var dados = new TipoAtendimentoRequest(nome, categoria, pontosBase);
         assertEquals(valido, validator.validate(dados).isEmpty());
     }
 
     @Test
     void recusaNomeAcimaDoLimiteDaColuna() {
-        var dados = new TipoAtendimentoRequest("x".repeat(121), CategoriaAtendimento.EXAME, 30, true);
+        var dados = new TipoAtendimentoRequest("x".repeat(121), CategoriaAtendimento.EXAME, 30);
         assertEquals(1, validator.validate(dados).size());
-    }
-
-    // Cadastrar já inativo é válido: o médico pode preparar o catálogo antes de liberar o tipo
-    @Test
-    void aceitaTipoInativo() {
-        var dados = new TipoAtendimentoRequest("Ultrassom 4D", CategoriaAtendimento.EXAME, 30, false);
-        assertTrue(validator.validate(dados).isEmpty());
     }
 }

@@ -9,7 +9,6 @@ import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
-import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.Filtros;
 import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,15 +22,12 @@ import java.util.List;
 @Service
 public class TipoAtendimentoService {
     private final TipoAtendimentoRepository tipoRepository;
-    private final AgendamentoRepository agendamentoRepository;
 
-    public TipoAtendimentoService(TipoAtendimentoRepository tipoRepository,
-                                  AgendamentoRepository agendamentoRepository) {
+    public TipoAtendimentoService(TipoAtendimentoRepository tipoRepository) {
         this.tipoRepository = tipoRepository;
-        this.agendamentoRepository = agendamentoRepository;
     }
 
-    // O que o médico pode escolher num agendamento: os padrão mais os dele, só os ativos.
+    // O que o médico pode escolher num agendamento: os padrão mais os dele, sem os excluídos.
     // A categoria filtra aqui, e não no banco, porque a consulta já devolve o catálogo inteiro do médico.
     @Transactional(readOnly = true)
     public List<TipoAtendimentoResponse> disponiveis(Long idMedico, CategoriaAtendimento categoria) {
@@ -41,12 +37,13 @@ public class TipoAtendimentoService {
                 .toList();
     }
 
-    // A gestão mostra só os tipos do próprio médico: os padrão não são dele para editar
+    // A gestão mostra só os tipos vivos do próprio médico: os padrão não são dele para editar
     @Transactional(readOnly = true)
     public PaginaResponse<TipoAtendimentoResponse> listar(Long idMedico, ListagemRequest listagem,
                                                           CategoriaAtendimento categoria) {
         Specification<TipoAtendimento> filtro = Specification.allOf(
                 Filtros.igual("criadoPor", idMedico),
+                Filtros.igual("ativo", true),
                 Filtros.igual("categoria", categoria),
                 Filtros.busca(listagem.busca(), null, "nome"));
         return PaginaResponse.de(tipoRepository.findAll(filtro, listagem.ordenadaPor("nome"))
@@ -56,11 +53,11 @@ public class TipoAtendimentoService {
     @Transactional
     public TipoAtendimentoResponse cadastrar(Long idMedico, TipoAtendimentoRequest dados) {
         String nome = dados.nome().trim();
-        if (tipoRepository.existsByNomeAndCriadoPor(nome, idMedico)) {
+        if (tipoRepository.existsByNomeAndCriadoPorAndAtivoTrue(nome, idMedico)) {
             throw new ConflitoException("Você já tem um tipo com esse nome");
         }
         return resposta(tipoRepository.save(
-                new TipoAtendimento(idMedico, nome, dados.categoria(), dados.pontosBase(), dados.ativo())));
+                new TipoAtendimento(idMedico, nome, dados.categoria(), dados.pontosBase())));
     }
 
     @Transactional(readOnly = true)
@@ -72,26 +69,22 @@ public class TipoAtendimentoService {
     public TipoAtendimentoResponse atualizar(Long idMedico, Long idTipo, TipoAtendimentoRequest dados) {
         TipoAtendimento tipo = encontrar(idMedico, idTipo);
         String nome = dados.nome().trim();
-        if (!nome.equals(tipo.getNome()) && tipoRepository.existsByNomeAndCriadoPor(nome, idMedico)) {
+        if (!nome.equals(tipo.getNome())
+                && tipoRepository.existsByNomeAndCriadoPorAndAtivoTrue(nome, idMedico)) {
             throw new ConflitoException("Você já tem um tipo com esse nome");
         }
-        tipo.atualizar(nome, dados.categoria(), dados.pontosBase(), dados.ativo());
+        tipo.atualizar(nome, dados.categoria(), dados.pontosBase());
         return resposta(tipo);
     }
 
-    // Excluir só enquanto ninguém usou o tipo. Depois disso, desativar: apagar levaria junto o nome do que
-    // a gestante já fez, e o agendamento tem chave estrangeira para cá.
+    // Exclusão lógica: apagar levaria junto o nome do que a gestante já fez, e o agendamento tem chave
+    // estrangeira para cá. O tipo some da gestão e da lista de escolha, e o histórico continua legível.
     @Transactional
     public void excluir(Long idMedico, Long idTipo) {
-        TipoAtendimento tipo = encontrar(idMedico, idTipo);
-        if (agendamentoRepository.existsByTipoId(idTipo)) {
-            throw new ConflitoException(
-                    "Este tipo já tem exames ou consultas cadastrados; desative-o em vez de excluir");
-        }
-        tipoRepository.delete(tipo);
+        encontrar(idMedico, idTipo).excluir();
     }
 
-    // Tipo escolhido no cadastro de um agendamento: precisa estar ativo e ser visível para este médico
+    // Tipo escolhido no cadastro de um agendamento: não pode estar excluído e precisa ser visível para este médico
     @Transactional(readOnly = true)
     public TipoAtendimento paraAgendamento(Long idMedico, Long idTipo) {
         return tipoRepository.findById(idTipo)
@@ -101,12 +94,12 @@ public class TipoAtendimentoService {
     }
 
     private TipoAtendimento encontrar(Long idMedico, Long idTipo) {
-        return tipoRepository.findByIdAndCriadoPor(idTipo, idMedico)
+        return tipoRepository.findByIdAndCriadoPorAndAtivoTrue(idTipo, idMedico)
                 .orElseThrow(() -> new NaoEncontradoException("Tipo de atendimento não encontrado"));
     }
 
     static TipoAtendimentoResponse resposta(TipoAtendimento tipo) {
         return new TipoAtendimentoResponse(tipo.getId(), tipo.getNome(), tipo.getCategoria(),
-                tipo.getPontosBase(), tipo.isAtivo(), tipo.padrao());
+                tipo.getPontosBase(), tipo.padrao());
     }
 }

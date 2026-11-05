@@ -12,6 +12,5 @@ import jakarta.validation.constraints.Size;
 public record TipoAtendimentoRequest(
         @NotBlank @Size(max = 120) String nome,
         @NotNull CategoriaAtendimento categoria,
-        @NotNull @Min(1) @Max(1000) Integer pontosBase,
-        boolean ativo
+        @NotNull @Min(1) @Max(1000) Integer pontosBase
 ) {}

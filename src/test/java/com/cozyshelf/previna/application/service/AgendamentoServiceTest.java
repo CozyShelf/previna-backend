@@ -47,9 +47,9 @@ class AgendamentoServiceTest {
     private final Gestante gestante = Campos.definir(new Gestante("Maria", "12345678909", null, "12345678909",
             "hash", medico, LocalDate.of(1995, 1, 1), "11999999999", LocalDate.now()), "id", 1L);
     private final TipoAtendimento hemograma = Campos.definir(
-            new TipoAtendimento(null, "Hemograma completo", CategoriaAtendimento.EXAME, 25, true), "id", 3L);
+            new TipoAtendimento(null, "Hemograma completo", CategoriaAtendimento.EXAME, 25), "id", 3L);
     private final TipoAtendimento consulta = Campos.definir(
-            new TipoAtendimento(7L, "Consulta puerperal", CategoriaAtendimento.CONSULTA, 50, true), "id", 4L);
+            new TipoAtendimento(7L, "Consulta puerperal", CategoriaAtendimento.CONSULTA, 50), "id", 4L);
 
     @BeforeEach
     void setUp() {

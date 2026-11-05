@@ -9,7 +9,7 @@ Cada diagrama tem a sua pasta, com o fonte (`.puml`, PlantUML) e a imagem (`.png
 
 Para gerar a imagem de novo depois de editar o fonte: `java -jar plantuml.jar -tpng <pasta>/<nome>.puml` (PlantUML 1.2024.7). O modelo lógico e os casos de uso usam o layout `smetana`, que não precisa do Graphviz.
 
-No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cupom e auditoria); as demais seguem as migrações V1 a V13.
+No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cupom e auditoria); as demais seguem as migrações V1 a V14.
 
 ## Decisões
 
@@ -19,6 +19,11 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cu
 - **Catálogo de tipos de atendimento:** os 21 tipos iniciais vão na migração `V11`, e não em `db/seed`, porque
   `db/seed` só é carregado no profile `dev` e o catálogo precisa existir em produção. Na `V12`, o médico passa a
   cadastrar os próprios tipos: `criado_por` nulo é o tipo padrão, visível para todos.
+- **Exclusão do tipo de atendimento:** lógica (`V14`). O médico não escolhe mais ativo/inativo no formulário:
+  excluir grava `tipo_atendimento.ativo = FALSE`, e a linha fica porque `agendamento` tem chave estrangeira
+  para ela e o histórico da gestante perderia o nome do exame. O tipo excluído some da gestão e da lista de
+  escolha, e responde `404` como um inexistente. O nome volta a ficar livre: a UNIQUE `(nome, criado_por)`
+  virou índice único parcial, só entre os tipos com `ativo`.
 - **Crédito único por agendamento:** a resolução trava a linha do agendamento, então a segunda confirmação espera,
   encontra o desfecho já registrado e recebe `409`. `transacao_pontos.agendamento_id` é `UNIQUE` como última barreira.
 - **Saldo de pontos:** `gestante.saldo_pontos` é atualizado junto com o extrato, com a gestante travada (a mesma trava
