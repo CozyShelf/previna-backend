@@ -242,4 +242,14 @@ class GestanteServiceTest {
         assertEquals("Dra. Ana", service.buscarDetalhe(9L, 3L).medico());
         verify(gestanteRepository, never()).findByIdAndMedicoId(any(), any());
     }
+
+    // Token temporário de outro tipo de conta (ou de conta que não existe mais): 404, e não 500
+    @Test
+    void primeiroAcessoDeContaQueNaoEDesteTipoResponde404() {
+        when(gestanteRepository.findById(99L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class,
+                () -> service.concluirPrimeiroAcesso(99L, primeiroAcesso("maria.silva", "novaSenha1"), null));
+        assertEquals("Gestante não encontrada", erro.getMessage());
+    }
 }
