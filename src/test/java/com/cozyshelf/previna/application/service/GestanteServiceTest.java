@@ -2,6 +2,7 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AtualizacaoPerfilGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.ListagemRequest;
+import com.cozyshelf.previna.application.dto.request.PreCadastroGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
@@ -89,6 +90,28 @@ class GestanteServiceTest {
 
         assertThrows(ConflitoException.class,
                 () -> service.concluirPrimeiroAcesso(1L, primeiroAcesso("outro.login", "outraSenha2"), null));
+    }
+
+    // O médico reconsulta as credenciais temporárias até a gestante concluir o primeiro acesso
+    @Test
+    void detalheMostraCredenciaisTemporariasAteOPrimeiroAcesso() {
+        Medico ana = medico(false);
+        when(medicoRepository.getReferenceById(7L)).thenReturn(ana);
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
+        var credenciais = service.preCadastrar(new PreCadastroGestanteRequest("Maria", "12345678909",
+                LocalDate.of(1995, 1, 1), "11999999999", null, LocalDate.now()), 7L);
+        ArgumentCaptor<Gestante> salva = ArgumentCaptor.forClass(Gestante.class);
+        verify(gestanteRepository).save(salva.capture());
+        when(gestanteRepository.findById(1L)).thenReturn(Optional.of(salva.getValue()));
+        when(gestanteRepository.findByIdAndMedicoId(1L, 7L)).thenReturn(Optional.of(salva.getValue()));
+
+        assertEquals(credenciais, service.buscarDetalhe(7L, 1L).credenciaisTemporarias());
+        assertTrue(passwordEncoder.matches(credenciais.senha(), salva.getValue().getSenhaHash()));
+
+        service.concluirPrimeiroAcesso(1L, primeiroAcesso("maria.silva", "novaSenha1"), null);
+
+        assertNull(salva.getValue().getSenhaTemporaria());
+        assertNull(service.buscarDetalhe(7L, 1L).credenciaisTemporarias());
     }
 
     private static Medico medico(boolean verTodasGestantes) {

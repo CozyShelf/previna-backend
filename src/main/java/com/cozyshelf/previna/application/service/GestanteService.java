@@ -65,7 +65,7 @@ public class GestanteService {
                 senhaAleatoria
         );
 
-        gestanteRepository.save(new Gestante(
+        Gestante gestante = new Gestante(
                 dados.nome(),
                 dados.cpf(),
                 dados.email(),
@@ -75,7 +75,9 @@ public class GestanteService {
                 dados.dataNascimento(),
                 dados.telefone(),
                 dados.dum()
-        ));
+        );
+        gestante.guardarSenhaTemporaria(credenciais.senha());
+        gestanteRepository.save(gestante);
 
         return credenciais;
     }
@@ -113,7 +115,9 @@ public class GestanteService {
         return new GestanteDetalheResponse(gestante.getId(), gestante.getNome(), gestante.getCpf(),
                 gestante.getTelefone(), gestante.getEmail(), gestante.getDataNascimento(), gestante.getDum(),
                 gestante.getDataProvavelParto(), gestante.getSaldoPontos(), gestante.primeiroAcessoPendente(),
-                gestante.getMedico().getNome());
+                gestante.getMedico().getNome(),
+                gestante.getSenhaTemporaria() == null ? null
+                        : new CredenciaisTemporariasResponse(gestante.getLogin(), gestante.getSenhaTemporaria()));
     }
 
     // Mesma regra do gestanteDoMedico, para quem já tem a gestante em mãos (ex.: a partir de um agendamento)
