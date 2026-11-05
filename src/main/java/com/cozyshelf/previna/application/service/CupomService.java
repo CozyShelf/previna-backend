@@ -39,7 +39,7 @@ public class CupomService {
     @Transactional(readOnly = true)
     public PaginaResponse<CupomResponse> listar(Long idEmpresa, ListagemRequest listagem) {
         return PaginaResponse.de(cupomRepository.findAll(Filtros.igual("empresaId", idEmpresa),
-                listagem.ordenadaPor("dataValidade")).map(CupomService::resposta));
+                listagem.maisRecentes()).map(CupomService::resposta));
     }
 
     // Cupom de outra empresa responde como inexistente

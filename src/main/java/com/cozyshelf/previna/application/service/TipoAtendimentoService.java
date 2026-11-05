@@ -46,7 +46,7 @@ public class TipoAtendimentoService {
                 Filtros.igual("ativo", true),
                 Filtros.igual("categoria", categoria),
                 Filtros.busca(listagem.busca(), null, "nome"));
-        return PaginaResponse.de(tipoRepository.findAll(filtro, listagem.ordenadaPor("nome"))
+        return PaginaResponse.de(tipoRepository.findAll(filtro, listagem.maisRecentes())
                 .map(TipoAtendimentoService::resposta));
     }
 

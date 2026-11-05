@@ -36,7 +36,7 @@ public class PromocaoService {
         Specification<Promocao> filtro = Specification.allOf(
                 Filtros.igual("empresaId", idEmpresa),
                 Filtros.busca(listagem.busca(), null, "titulo"));
-        return PaginaResponse.de(promocaoRepository.findAll(filtro, listagem.ordenadaPor("titulo"))
+        return PaginaResponse.de(promocaoRepository.findAll(filtro, listagem.maisRecentes())
                 .map(PromocaoService::resposta));
     }
 

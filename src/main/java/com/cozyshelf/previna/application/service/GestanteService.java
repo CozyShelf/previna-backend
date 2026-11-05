@@ -90,7 +90,7 @@ public class GestanteService {
                 Filtros.busca(listagem.busca(), "cpf", "nome"),
                 Filtros.igual("statusConta", situacao),
                 Filtros.igual("medico", todas ? null : medico));
-        return PaginaResponse.de(gestanteRepository.findAll(filtro, listagem.ordenadaPor("nome"))
+        return PaginaResponse.de(gestanteRepository.findAll(filtro, listagem.maisRecentes())
                 .map(g -> new GestanteResumoResponse(g.getId(), g.getNome(), g.getCpf(), g.getTelefone(),
                         g.getDum(), g.getDataProvavelParto(), g.primeiroAcessoPendente(),
                         g.getMedico().getNome())));

@@ -105,7 +105,7 @@ public class ConteudoService {
                 Filtros.igual("tipo", tipo),
                 Filtros.igual("publicado", publicado),
                 Filtros.busca(listagem.busca(), null, "titulo"));
-        return PaginaResponse.de(conteudoRepository.findAll(filtro, listagem.ordenadaPor("titulo"))
+        return PaginaResponse.de(conteudoRepository.findAll(filtro, listagem.maisRecentes())
                 .map(ConteudoService::resposta));
     }
 
