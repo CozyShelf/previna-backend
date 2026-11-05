@@ -21,4 +21,10 @@ public record ListagemRequest(
         return PageRequest.of(pagina == null ? 0 : pagina, tamanho == null ? TAMANHO_PADRAO : tamanho,
                 Sort.by(Sort.Order.asc(campo).ignoreCase(), Sort.Order.asc("id")));
     }
+
+    // Para as consultas que já trazem o próprio ORDER BY (ex.: a ordem aleatória dos conteúdos):
+    // um Sort aqui seria acrescentado depois do da consulta e desfaria o sorteio
+    public Pageable semOrdem() {
+        return PageRequest.of(pagina == null ? 0 : pagina, tamanho == null ? TAMANHO_PADRAO : tamanho);
+    }
 }

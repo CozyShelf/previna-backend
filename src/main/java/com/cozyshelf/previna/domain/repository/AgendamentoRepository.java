@@ -19,6 +19,14 @@ public interface AgendamentoRepository extends JpaRepository<Agendamento, Long> 
     @EntityGraph(attributePaths = {"tipo", "gestante"})
     List<Agendamento> findByGestanteId(Long gestanteId);
 
+    // Pendentes do app: o que o médico ainda não resolveu
+    @EntityGraph(attributePaths = {"tipo", "gestante"})
+    List<Agendamento> findByGestanteIdAndStatus(Long gestanteId, StatusAgendamento status);
+
+    // Histórico do app: tudo o que saiu do AGENDADO, realizado ou não comparecido
+    @EntityGraph(attributePaths = {"tipo", "gestante"})
+    List<Agendamento> findByGestanteIdAndStatusNot(Long gestanteId, StatusAgendamento status);
+
     @Override
     @EntityGraph(attributePaths = {"tipo", "gestante"})
     Optional<Agendamento> findById(Long id);
