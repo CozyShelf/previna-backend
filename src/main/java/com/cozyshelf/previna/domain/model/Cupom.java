@@ -67,6 +67,14 @@ public class Cupom {
         return ativo;
     }
 
+    // A situação (ativo) não muda aqui: tem a própria ação
+    public void atualizar(Produto produto, BigDecimal desconto, LocalDate dataValidade, Integer pontosNecessarios) {
+        this.produto = produto;
+        this.desconto = desconto;
+        this.dataValidade = dataValidade;
+        this.pontosNecessarios = pontosNecessarios;
+    }
+
     public void alterarAtivo(boolean ativo) {
         this.ativo = ativo;
     }

@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PromocaoResponse;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.repository.Filtros;
 import com.cozyshelf.previna.domain.repository.PromocaoRepository;
@@ -22,9 +23,7 @@ public class PromocaoService {
 
     @Transactional
     public PromocaoResponse cadastrar(Long idEmpresa, PromocaoRequest dados) {
-        if (dados.dataFim().isBefore(dados.dataInicio())) {
-            throw new DadosInvalidosException("A data de fim deve ser igual ou posterior à de início");
-        }
+        validarPeriodo(dados);
         Promocao promocao = promocaoRepository.save(new Promocao(idEmpresa, dados.titulo(), dados.descricao(),
                 dados.desconto(), dados.dataInicio(), dados.dataFim(), dados.categoria()));
         return resposta(promocao);
@@ -38,6 +37,33 @@ public class PromocaoService {
                 Filtros.busca(listagem.busca(), null, "titulo"));
         return PaginaResponse.de(promocaoRepository.findAll(filtro, listagem.ordenadaPor("titulo"))
                 .map(PromocaoService::resposta));
+    }
+
+    @Transactional(readOnly = true)
+    public PromocaoResponse buscar(Long idEmpresa, Long idPromocao) {
+        return resposta(encontrar(idEmpresa, idPromocao));
+    }
+
+    // Troca todos os dados
+    @Transactional
+    public PromocaoResponse atualizar(Long idEmpresa, Long idPromocao, PromocaoRequest dados) {
+        validarPeriodo(dados);
+        Promocao promocao = encontrar(idEmpresa, idPromocao);
+        promocao.atualizar(dados.titulo(), dados.descricao(), dados.desconto(), dados.dataInicio(), dados.dataFim(),
+                dados.categoria());
+        return resposta(promocao);
+    }
+
+    // Promoção de outra empresa responde como inexistente
+    private Promocao encontrar(Long idEmpresa, Long idPromocao) {
+        return promocaoRepository.findByIdAndEmpresaId(idPromocao, idEmpresa)
+                .orElseThrow(() -> new NaoEncontradoException("Promoção não encontrada"));
+    }
+
+    private static void validarPeriodo(PromocaoRequest dados) {
+        if (dados.dataFim().isBefore(dados.dataInicio())) {
+            throw new DadosInvalidosException("A data de fim deve ser igual ou posterior à de início");
+        }
     }
 
     private static PromocaoResponse resposta(Promocao promocao) {

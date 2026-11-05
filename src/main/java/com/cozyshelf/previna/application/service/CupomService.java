@@ -26,12 +26,23 @@ public class CupomService {
 
     @Transactional
     public CupomResponse cadastrar(Long idEmpresa, CupomRequest dados) {
-        // Id de produto de outra empresa (ou inexistente) não volta na busca
-        Produto produto = produtoRepository.findByIdAndEmpresaId(dados.produto(), idEmpresa)
-                .orElseThrow(() -> new DadosInvalidosException("Produto não pertence à empresa"));
-
+        Produto produto = produtoDaEmpresa(idEmpresa, dados.produto());
         Cupom cupom = cupomRepository.save(new Cupom(idEmpresa, produto, dados.desconto(), dados.dataValidade(),
                 dados.pontosNecessarios()));
+        return resposta(cupom);
+    }
+
+    @Transactional(readOnly = true)
+    public CupomResponse buscar(Long idEmpresa, Long idCupom) {
+        return resposta(encontrar(idEmpresa, idCupom));
+    }
+
+    // Troca todos os dados, inclusive o produto; a situação (ativo) continua a mesma
+    @Transactional
+    public CupomResponse atualizar(Long idEmpresa, Long idCupom, CupomRequest dados) {
+        Cupom cupom = encontrar(idEmpresa, idCupom);
+        cupom.atualizar(produtoDaEmpresa(idEmpresa, dados.produto()), dados.desconto(), dados.dataValidade(),
+                dados.pontosNecessarios());
         return resposta(cupom);
     }
 
@@ -42,17 +53,27 @@ public class CupomService {
                 listagem.ordenadaPor("dataValidade")).map(CupomService::resposta));
     }
 
-    // Cupom de outra empresa responde como inexistente
     @Transactional
     public CupomResponse alterarAtivo(Long idEmpresa, Long idCupom, boolean ativo) {
-        Cupom cupom = cupomRepository.findByIdAndEmpresaId(idCupom, idEmpresa)
-                .orElseThrow(() -> new NaoEncontradoException("Cupom não encontrado"));
+        Cupom cupom = encontrar(idEmpresa, idCupom);
         cupom.alterarAtivo(ativo);
         return resposta(cupom);
     }
 
+    // Cupom de outra empresa responde como inexistente
+    private Cupom encontrar(Long idEmpresa, Long idCupom) {
+        return cupomRepository.findByIdAndEmpresaId(idCupom, idEmpresa)
+                .orElseThrow(() -> new NaoEncontradoException("Cupom não encontrado"));
+    }
+
+    // Id de produto de outra empresa (ou inexistente) não volta na busca
+    private Produto produtoDaEmpresa(Long idEmpresa, Long idProduto) {
+        return produtoRepository.findByIdAndEmpresaId(idProduto, idEmpresa)
+                .orElseThrow(() -> new DadosInvalidosException("Produto não pertence à empresa"));
+    }
+
     private static CupomResponse resposta(Cupom cupom) {
         return new CupomResponse(cupom.getId(), cupom.getDescricao(), cupom.getProduto().getNome(),
-                cupom.getDesconto(), cupom.getDataValidade(), cupom.getPontosNecessarios(), cupom.isAtivo());
+                cupom.getProduto().getId(), cupom.getDesconto(), cupom.getDataValidade(), cupom.getPontosNecessarios(), cupom.isAtivo());
     }
 }

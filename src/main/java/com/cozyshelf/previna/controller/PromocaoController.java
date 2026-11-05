@@ -15,7 +15,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,5 +48,22 @@ public class PromocaoController {
             @RequestBody @Valid PromocaoRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado empresa) {
         return ResponseEntity.status(HttpStatus.CREATED).body(promocaoService.cadastrar(empresa.id(), dados));
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Retorna uma promoção da empresa autenticada")
+    public ResponseEntity<PromocaoResponse> buscar(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UsuarioAutenticado empresa) {
+        return ResponseEntity.ok(promocaoService.buscar(empresa.id(), id));
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Atualiza uma promoção da empresa autenticada")
+    public ResponseEntity<PromocaoResponse> atualizar(
+            @PathVariable Long id,
+            @RequestBody @Valid PromocaoRequest dados,
+            @AuthenticationPrincipal UsuarioAutenticado empresa) {
+        return ResponseEntity.ok(promocaoService.atualizar(empresa.id(), id, dados));
     }
 }
