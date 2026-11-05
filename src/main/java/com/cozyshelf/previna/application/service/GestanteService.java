@@ -116,7 +116,8 @@ public class GestanteService {
                 gestante.getTelefone(), gestante.getEmail(), gestante.getDataNascimento(), gestante.getDum(),
                 gestante.getDataProvavelParto(), gestante.getSaldoPontos(), gestante.primeiroAcessoPendente(),
                 gestante.getMedico().getNome(),
-                gestante.getSenhaTemporaria() == null ? null
+                // Só o médico responsável: quem vê todas as gestantes poderia fazer o primeiro acesso por ela
+                gestante.getSenhaTemporaria() == null || !idMedico.equals(gestante.getMedico().getId()) ? null
                         : new CredenciaisTemporariasResponse(gestante.getLogin(), gestante.getSenhaTemporaria()));
     }
 

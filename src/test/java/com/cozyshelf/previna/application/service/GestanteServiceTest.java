@@ -7,6 +7,7 @@ import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
+import com.cozyshelf.previna.domain.Campos;
 import com.cozyshelf.previna.domain.model.Escolaridade;
 import com.cozyshelf.previna.domain.model.FotoGestante;
 import com.cozyshelf.previna.domain.model.Gestante;
@@ -95,7 +96,7 @@ class GestanteServiceTest {
     // O médico reconsulta as credenciais temporárias até a gestante concluir o primeiro acesso
     @Test
     void detalheMostraCredenciaisTemporariasAteOPrimeiroAcesso() {
-        Medico ana = medico(false);
+        Medico ana = Campos.definir(medico(false), "id", 7L);
         when(medicoRepository.getReferenceById(7L)).thenReturn(ana);
         when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
         var credenciais = service.preCadastrar(new PreCadastroGestanteRequest("Maria", "12345678909",
@@ -256,13 +257,19 @@ class GestanteServiceTest {
     @Test
     void medicoComPermissaoVeGestanteDeOutroMedico() {
         Medico supervisor = new Medico("Dr. Bruno", "22222222222", null, "CRM-SP 2", "bruno", "hash", true);
-        Medico outro = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
+        Medico outro = Campos.definir(
+                new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false), "id", 7L);
         Gestante deOutro = new Gestante("Joana", "98765432100", null, "98765432100", "hash",
                 outro, LocalDate.of(1998, 5, 2), "11988888888", LocalDate.of(2026, 2, 1));
+        deOutro.guardarSenhaTemporaria("Ab3dEf7h");
         when(medicoRepository.findById(9L)).thenReturn(Optional.of(supervisor));
         when(gestanteRepository.findById(3L)).thenReturn(Optional.of(deOutro));
 
-        assertEquals("Dra. Ana", service.buscarDetalhe(9L, 3L).medico());
+        var detalhe = service.buscarDetalhe(9L, 3L);
+
+        assertEquals("Dra. Ana", detalhe.medico());
+        // As credenciais temporárias ficam só com o médico responsável
+        assertNull(detalhe.credenciaisTemporarias());
         verify(gestanteRepository, never()).findByIdAndMedicoId(any(), any());
     }
 }
