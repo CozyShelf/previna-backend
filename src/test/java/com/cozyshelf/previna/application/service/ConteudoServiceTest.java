@@ -179,6 +179,45 @@ class ConteudoServiceTest {
         verify(imagemRepository).deleteAllById(List.of(5L));
     }
 
+    // Vídeo e artigo entram como link; arquivo só no tipo FOTO, e o Imagem.de já barra o que não é imagem
+    @Test
+    void recusaArquivoEmTipoQueNaoEFoto() {
+        var video = new ConteudoRequest("Parto normal", CategoriaConteudo.DICA, TipoConteudo.VIDEO,
+                null, null, "https://exemplo.com/video.mp4");
+
+        assertThrows(DadosInvalidosException.class, () -> service.cadastrar(9L, video, arquivo(PNG)));
+        verify(conteudoRepository, never()).save(any());
+        verify(imagemRepository, never()).save(any());
+    }
+
+    @Test
+    void recusaArquivoAoAtualizarParaTipoQueNaoEFoto() {
+        assertThrows(DadosInvalidosException.class, () -> service.atualizar(5L, LINK, arquivo(PNG)));
+        verify(conteudoRepository, never()).findById(any());
+        verify(imagemRepository, never()).save(any());
+    }
+
+    @Test
+    void recusaEnderecoQueNaoEHttp() {
+        var caminhoDaApi = new ConteudoRequest("Título", CategoriaConteudo.DICA, TipoConteudo.LINK,
+                null, null, "/conteudos/9/imagem");
+
+        assertThrows(DadosInvalidosException.class, () -> service.cadastrar(9L, caminhoDaApi, null));
+        verify(conteudoRepository, never()).save(any());
+    }
+
+    // Sem endereço novo, a URL da foto apagada não pode ficar na linha
+    @Test
+    void sairDeFotoParaTextoLimpaOEnderecoDaFoto() {
+        var conteudo = novo(5L, TipoConteudo.FOTO, "/conteudos/5/imagem?v=1");
+        when(conteudoRepository.findById(5L)).thenReturn(Optional.of(conteudo));
+
+        var resposta = service.atualizar(5L, TEXTO, null);
+
+        assertNull(resposta.midiaUrl());
+        verify(imagemRepository).deleteAllById(List.of(5L));
+    }
+
     @Test
     void atualizarConteudoInexistenteDaNaoEncontrado() {
         when(conteudoRepository.findById(5L)).thenReturn(Optional.empty());

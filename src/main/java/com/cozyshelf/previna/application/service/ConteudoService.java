@@ -37,7 +37,9 @@ public class ConteudoService {
     public ConteudoResponse cadastrar(Long idAdmin, ConteudoRequest dados, MultipartFile imagem) {
         // Valida a imagem antes de salvar o conteúdo
         Optional<Imagem> arquivo = Imagem.de(imagem);
+        exigirArquivoSoNaFoto(dados.tipo(), arquivo.isPresent());
         String midiaUrl = texto(dados.midiaUrl());
+        exigirEnderecoDeLink(midiaUrl);
         exigirMidiaDoTipo(dados.tipo(), texto(dados.corpo()), midiaUrl, arquivo.isPresent());
 
         ConteudoInformativo conteudo = conteudoRepository.save(new ConteudoInformativo(idAdmin,
@@ -51,15 +53,19 @@ public class ConteudoService {
     @Transactional
     public ConteudoResponse atualizar(Long idConteudo, ConteudoRequest dados, MultipartFile imagem) {
         Optional<Imagem> arquivo = Imagem.de(imagem);
+        exigirArquivoSoNaFoto(dados.tipo(), arquivo.isPresent());
         ConteudoInformativo conteudo = encontrar(idConteudo);
 
         String midiaUrl = texto(dados.midiaUrl());
-        // Na edição a foto já salva também vale como mídia, mesmo sem arquivo novo
-        boolean temFotoSalva = conteudo.getTipo() == TipoConteudo.FOTO && conteudo.getMidiaUrl() != null;
-        exigirMidiaDoTipo(dados.tipo(), texto(dados.corpo()), midiaUrl, arquivo.isPresent() || temFotoSalva);
+        exigirEnderecoDeLink(midiaUrl);
+        // Na edição a foto já salva vale como mídia sem arquivo novo, desde que o tipo continue FOTO
+        boolean mantemFotoSalva = dados.tipo() == TipoConteudo.FOTO
+                && conteudo.getTipo() == TipoConteudo.FOTO && conteudo.getMidiaUrl() != null;
+        exigirMidiaDoTipo(dados.tipo(), texto(dados.corpo()), midiaUrl, arquivo.isPresent() || mantemFotoSalva);
 
-        // Sem mídia nova e sem arquivo, mantém a foto que já estava salva
-        String midiaFinal = midiaUrl != null ? midiaUrl : (temFotoSalva ? conteudo.getMidiaUrl() : null);
+        // Sem mídia nova e sem arquivo, mantém a foto que já estava salva; saindo de FOTO, a URL dela
+        // apontaria para os bytes apagados logo abaixo
+        String midiaFinal = midiaUrl != null ? midiaUrl : (mantemFotoSalva ? conteudo.getMidiaUrl() : null);
         conteudo.atualizar(dados.titulo().trim(), dados.categoria(), dados.tipo(), texto(dados.resumo()),
                 texto(dados.corpo()), midiaFinal);
         arquivo.ifPresent(i -> salvarImagem(conteudo, i));
@@ -122,6 +128,23 @@ public class ConteudoService {
     @Transactional(readOnly = true)
     public Optional<ImagemConteudo> buscarImagem(Long idConteudo) {
         return imagemRepository.findById(idConteudo);
+    }
+
+    // Arquivo enviado só existe no tipo FOTO, e o Imagem.de já recusa o que não for PNG, JPEG ou WebP.
+    // Vídeo e artigo entram como endereço: o app abre o link, não guardamos arquivo de vídeo
+    private static void exigirArquivoSoNaFoto(TipoConteudo tipo, boolean temArquivo) {
+        if (temArquivo && tipo != TipoConteudo.FOTO) {
+            throw new DadosInvalidosException(
+                    "Só o tipo Foto aceita arquivo; para vídeo ou artigo informe o endereço do link");
+        }
+    }
+
+    // Endereço tem de ser um link http(s): "javascript:" ou um caminho começando com "/" chegariam
+    // no app como link da própria API
+    private static void exigirEnderecoDeLink(String midiaUrl) {
+        if (midiaUrl != null && !midiaUrl.matches("https?://\\S+")) {
+            throw new DadosInvalidosException("Informe um endereço começando com http:// ou https://");
+        }
     }
 
     // TEXTO vive do corpo; FOTO, VIDEO e LINK não têm o que mostrar sem mídia

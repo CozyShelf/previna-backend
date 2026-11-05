@@ -42,8 +42,11 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (resgate de cu
 - **Obrigatório por tipo de conteúdo:** `TEXTO` exige `corpo`; `FOTO`, `VIDEO` e `LINK` exigem mídia. A regra fica no
   `ConteudoService` (400), e não num CHECK: a foto enviada só ganha `midia_url` depois do INSERT, porque o id entra na URL.
 - **Mídia do conteúdo:** foto enviada vai para `imagem_conteudo` (BYTEA), como `imagem_produto`, com `midia_url`
-  apontando para `/conteudos/{id}/imagem`; vídeo e link são só endereço. Não há upload de arquivo de vídeo: o limite
-  do multipart é 2 MB. No app, o player toca arquivo de vídeo (`.mp4`, `.m3u8`…); página de vídeo abre no navegador.
+  apontando para `/conteudos/{id}/imagem`; vídeo e link são só endereço. Só o tipo `FOTO` aceita arquivo, e o
+  `Imagem` recusa o que não for PNG, JPEG ou WebP pelos primeiros bytes: arquivo em `VIDEO`, `LINK` ou `TEXTO`
+  responde `400`. Não há upload de arquivo de vídeo. O endereço precisa começar com `http://` ou `https://`, senão
+  um `javascript:` ou um caminho `/...` chegaria ao app como link da própria API. No app, o player toca arquivo de
+  vídeo (`.mp4`, `.m3u8`…); página de vídeo abre no navegador.
 - **Ordem dos conteúdos na gestante:** aleatória, semeada pelo app a cada carregamento
   (`order by md5(id || semente)`). `order by random()` sorteia de novo a cada página e faria um conteúdo aparecer em
   duas e outro em nenhuma.
