@@ -1,4 +1,6 @@
--- Conteúdos educativos de exemplo, já publicados, cobrindo os quatro tipos e as três categorias.
+-- Conteúdos educativos de exemplo, já publicados, nos tipos TEXTO, LINK e VIDEO e nas três categorias.
+-- Sem exemplo de FOTO: a foto vem de arquivo enviado pelo admin, que o seed não tem como gravar.
+-- Vídeo é sempre endereço de link, aberto no navegador pelo app.
 -- Só no profile dev: db/seed não é carregado em produção.
 -- O arquivo inteiro é guardado por NOT EXISTS porque não há chave natural para ON CONFLICT e a
 -- migração é repeatable: ela roda de novo a cada alteração do arquivo.
@@ -81,32 +83,74 @@ Escove os dentes depois das refeições e use fio dental todos os dias. Se houve
             'https://www.gov.br/trabalho-e-emprego/pt-br/servicos/trabalhador'
         ),
         (
-            'Como reconhecer o início do trabalho de parto',
+            'Importância de iniciar o pré-natal no início da gravidez',
             'DICA', 'VIDEO',
-            'A diferença entre a contração de treinamento e a contração de verdade, e a hora de ir para a maternidade.',
+            'Começar cedo é o que permite acompanhar o bebê e tratar a tempo o que aparecer.',
             NULL,
-            'https://www.youtube.com/watch?v=aXmDOW2qxCY'
+            'https://www.youtube.com/watch?v=ZBKOK8MV5Vk'
         ),
         (
-            'Preparação para a amamentação',
+            'Como funciona o acompanhamento pré-natal',
             'DICA', 'VIDEO',
-            'Pega correta, posições que evitam rachaduras e o que fazer nos primeiros dias.',
+            'O que a equipe faz em cada consulta, do começo ao fim da gestação.',
             NULL,
-            'https://www.youtube.com/watch?v=u3IhKRqvvlU'
+            'https://www.youtube.com/watch?v=KHdN2i999ag'
         ),
         (
-            'Checklist da mala da maternidade',
-            'DICA', 'FOTO',
-            'O que separar para você e para o bebê a partir da 36ª semana.',
+            'Importância das consultas e acompanhamento da gestante',
+            'DICA', 'VIDEO',
+            'Por que não faltar às consultas marcadas, mesmo se estiver tudo bem.',
             NULL,
-            'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=1200'
+            'https://www.youtube.com/watch?v=PSgljFSSs4o'
         ),
         (
-            'Pré-natal: as consultas e os exames a que você tem direito',
-            'AVISO', 'FOTO',
-            'No mínimo seis consultas e a lista de exames garantidos pelo SUS, trimestre a trimestre.',
+            'Alimentação saudável durante a gestação',
+            'DICA', 'VIDEO',
+            'O que colocar no prato, o que evitar e como lidar com o enjoo.',
             NULL,
-            'https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?w=1200'
+            'https://youtu.be/H6csbDXOGj8'
+        ),
+        (
+            'Exames importantes durante o pré-natal',
+            'DICA', 'VIDEO',
+            'Quais exames são pedidos em cada trimestre e para que serve cada um.',
+            NULL,
+            'https://www.youtube.com/results?search_query=exames+importantes+pre+natal+gestantes'
+        ),
+        (
+            'Vacinação durante a gravidez',
+            'NOTICIA', 'VIDEO',
+            'As vacinas recomendadas na gestação e quando tomar cada uma.',
+            NULL,
+            'https://www.youtube.com/results?search_query=vacinas+recomendadas+para+gestantes+ministerio+da+saude'
+        ),
+        (
+            'Prevenção da sífilis e outras infecções na gestação',
+            'AVISO', 'VIDEO',
+            'Como se proteger, por que testar e por que tratar junto com o parceiro.',
+            NULL,
+            'https://www.youtube.com/watch?v=ZBKOK8MV5Vk'
+        ),
+        (
+            'Saúde mental e emocional durante a gravidez',
+            'DICA', 'VIDEO',
+            'Ansiedade, medo e tristeza também fazem parte, e também têm cuidado.',
+            NULL,
+            'https://www.youtube.com/results?search_query=saude+mental+da+gestante+fiocruz'
+        ),
+        (
+            'Sinais de alerta durante a gravidez',
+            'AVISO', 'VIDEO',
+            'Os sinais que pedem atendimento na hora, sem esperar a próxima consulta.',
+            NULL,
+            'https://www.youtube.com/results?search_query=sinais+de+alerta+na+gestacao+hospital'
+        ),
+        (
+            'Cuidados com a pressão arterial e prevenção da pré-eclâmpsia',
+            'AVISO', 'VIDEO',
+            'Por que a pressão é medida em toda consulta e o que fazer se subir.',
+            NULL,
+            'https://www.youtube.com/watch?v=KHdN2i999ag'
         )
      ) AS c(titulo, categoria, tipo, resumo, corpo, midia_url)
 WHERE NOT EXISTS (SELECT 1 FROM conteudo_informativo);
