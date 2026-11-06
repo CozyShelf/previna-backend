@@ -2,10 +2,12 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AtualizacaoPerfilGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.ListagemRequest;
+import com.cozyshelf.previna.application.dto.request.PreCadastroGestanteRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
+import com.cozyshelf.previna.domain.Campos;
 import com.cozyshelf.previna.domain.model.Escolaridade;
 import com.cozyshelf.previna.domain.model.FotoGestante;
 import com.cozyshelf.previna.domain.model.Gestante;
@@ -241,5 +243,140 @@ class GestanteServiceTest {
 
         assertEquals("Dra. Ana", service.buscarDetalhe(9L, 3L).medico());
         verify(gestanteRepository, never()).findByIdAndMedicoId(any(), any());
+    }
+
+    // ---- Pré-cadastro pelo médico ----
+
+    private static PreCadastroGestanteRequest preCadastro(String cpf) {
+        return new PreCadastroGestanteRequest("Joana Lima", cpf, LocalDate.of(1998, 5, 2), "11988888888",
+                "joana@exemplo.com", LocalDate.of(2026, 9, 1));
+    }
+
+    @Test
+    void preCadastraComOCpfComoLoginESenhaTemporariaDoMedico() {
+        Medico ana = medico(false);
+        when(medicoRepository.getReferenceById(7L)).thenReturn(ana);
+
+        var credenciais = service.preCadastrar(preCadastro("52998224725"), 7L);
+
+        var salva = ArgumentCaptor.forClass(Gestante.class);
+        verify(gestanteRepository).save(salva.capture());
+        Gestante nova = salva.getValue();
+        assertEquals("52998224725", credenciais.login());
+        assertEquals("52998224725", nova.getLogin());
+        // Só o hash vai para o banco; a senha em claro volta uma única vez, para o médico entregar à gestante
+        assertNotEquals(credenciais.senha(), nova.getSenhaHash());
+        assertTrue(passwordEncoder.matches(credenciais.senha(), nova.getSenhaHash()));
+        assertSame(ana, nova.getMedico());
+        assertTrue(nova.primeiroAcessoPendente());
+        assertEquals(LocalDate.of(2026, 9, 1).plusDays(280), nova.getDataProvavelParto());
+    }
+
+    @Test
+    void recusaCpfJaCadastradoSemSalvar() {
+        when(usuarioRepository.existsByCpf("52998224725")).thenReturn(true);
+
+        var erro = assertThrows(ConflitoException.class, () -> service.preCadastrar(preCadastro("52998224725"), 7L));
+
+        assertEquals("Gestante já cadastrada", erro.getMessage());
+        verify(gestanteRepository, never()).save(any());
+    }
+
+    // Cada pré-cadastro tem a sua senha: uma gestante não adivinha a senha temporária de outra
+    @Test
+    void senhasTemporariasNaoSeRepetem() {
+        when(medicoRepository.getReferenceById(7L)).thenReturn(medico(false));
+
+        var primeira = service.preCadastrar(preCadastro("52998224725"), 7L);
+        var segunda = service.preCadastrar(preCadastro("11144477735"), 7L);
+
+        assertNotEquals(primeira.senha(), segunda.senha());
+    }
+
+    // ---- Alcance do médico sobre uma gestante já carregada (ex.: pelo agendamento) ----
+
+    private static Gestante acompanhadaPor(Medico medico) {
+        return new Gestante("Joana", "98765432100", null, "98765432100", "hash", medico,
+                LocalDate.of(1998, 5, 2), "11988888888", LocalDate.of(2026, 2, 1));
+    }
+
+    @Test
+    void medicoAcessaAPropriaGestante() {
+        Medico ana = Campos.definir(medico(false), "id", 7L);
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
+
+        assertTrue(service.podeAcessar(7L, acompanhadaPor(ana)));
+    }
+
+    // Dado de saúde: sem a permissão do administrador, gestante de outro médico fica fora do alcance
+    @Test
+    void medicoNaoAcessaGestanteDeOutroMedico() {
+        Medico ana = Campos.definir(medico(false), "id", 7L);
+        Medico bruno = Campos.definir(medico(false), "id", 8L);
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
+
+        assertFalse(service.podeAcessar(7L, acompanhadaPor(bruno)));
+    }
+
+    @Test
+    void medicoComPermissaoAcessaGestanteDeOutroMedico() {
+        Medico supervisor = Campos.definir(medico(true), "id", 9L);
+        Medico bruno = Campos.definir(medico(false), "id", 8L);
+        when(medicoRepository.findById(9L)).thenReturn(Optional.of(supervisor));
+
+        assertTrue(service.podeAcessar(9L, acompanhadaPor(bruno)));
+    }
+
+    // ---- Perfil da gestante ----
+
+    @Test
+    void perfilIndicaSeHaFoto() {
+        when(fotoRepository.existsById(1L)).thenReturn(true);
+
+        var perfil = service.buscarPerfil(1L);
+
+        assertEquals("Maria", perfil.nome());
+        assertTrue(perfil.temFoto());
+    }
+
+    @Test
+    void trocaAFotoQuandoUmaNovaEEnviadaMesmoPedindoParaRemover() {
+        service.atualizarPerfil(1L, new AtualizacaoPerfilGestanteRequest("11912345678", null, true),
+                foto("89504e470d0a1a0a"));
+
+        verify(fotoRepository).save(argThat(f -> f.getTipo().equals("image/png")));
+        verify(fotoRepository, never()).deleteById(any());
+    }
+
+    // Manter o próprio e-mail não é conflito, mesmo ele já estando no banco (é dela)
+    @Test
+    void mantemOProprioEmailSemConferirDuplicidade() {
+        Campos.definir(gestante, "email", "maria@exemplo.com");
+
+        var perfil = service.atualizarPerfil(1L,
+                new AtualizacaoPerfilGestanteRequest("11912345678", "maria@exemplo.com", null), null);
+
+        verify(usuarioRepository, never()).existsByEmail(any());
+        verify(fotoRepository, never()).deleteById(any());
+        assertEquals("maria@exemplo.com", perfil.email());
+    }
+
+    @Test
+    void aceitaEmailNovoQueNinguemUsa() {
+        var perfil = service.atualizarPerfil(1L,
+                new AtualizacaoPerfilGestanteRequest("11912345678", "nova@exemplo.com", false), null);
+
+        verify(usuarioRepository).existsByEmail("nova@exemplo.com");
+        assertEquals("nova@exemplo.com", perfil.email());
+    }
+
+    // Token temporário de outro tipo de conta (ou de conta que não existe mais): 404, e não 500
+    @Test
+    void primeiroAcessoDeContaQueNaoEDesteTipoResponde404() {
+        when(gestanteRepository.findById(99L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class,
+                () -> service.concluirPrimeiroAcesso(99L, primeiroAcesso("maria.silva", "novaSenha1"), null));
+        assertEquals("Gestante não encontrada", erro.getMessage());
     }
 }

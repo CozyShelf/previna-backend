@@ -67,6 +67,15 @@ public class Cupom {
         return ativo;
     }
 
+    public Long getEmpresaId() {
+        return empresaId;
+    }
+
+    // Disponível para resgate: ativo e com a validade não vencida (vale até o fim do dia da validade)
+    public boolean disponivelEm(LocalDate dia) {
+        return ativo && !dataValidade.isBefore(dia);
+    }
+
     public void alterarAtivo(boolean ativo) {
         this.ativo = ativo;
     }

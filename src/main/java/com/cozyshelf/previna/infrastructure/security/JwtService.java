@@ -18,7 +18,11 @@ import java.util.Date;
 public class JwtService {
     private static final String CLAIM_PERFIL = "perfil";
     private static final String CLAIM_PRIMEIRO_ACESSO = "primeiroAcesso";
-    public static final String PAPEL_PRIMEIRO_ACESSO = "PRIMEIRO_ACESSO";
+    // Com a senha temporária o papel leva o tipo da conta (PRIMEIRO_ACESSO_GESTANTE, PRIMEIRO_ACESSO_EMPRESA_PARCEIRA):
+    // um papel único deixaria a gestante chamar o primeiro acesso da empresa, e vice-versa
+    public static final String PAPEL_PRIMEIRO_ACESSO_GESTANTE = "PRIMEIRO_ACESSO_GESTANTE";
+    public static final String PAPEL_PRIMEIRO_ACESSO_EMPRESA = "PRIMEIRO_ACESSO_EMPRESA_PARCEIRA";
+    private static final String PREFIXO_PRIMEIRO_ACESSO = "PRIMEIRO_ACESSO_";
 
     private final SecretKey chave;
     private final Duration expiracao;
@@ -54,9 +58,10 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+        String perfil = claims.get(CLAIM_PERFIL, String.class);
         String papel = Boolean.TRUE.equals(claims.get(CLAIM_PRIMEIRO_ACESSO, Boolean.class))
-                ? PAPEL_PRIMEIRO_ACESSO
-                : claims.get(CLAIM_PERFIL, String.class);
+                ? PREFIXO_PRIMEIRO_ACESSO + perfil
+                : perfil;
         return new UsuarioAutenticado(Long.valueOf(claims.getSubject()), papel);
     }
 }

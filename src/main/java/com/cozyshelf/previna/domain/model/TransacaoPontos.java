@@ -5,7 +5,8 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-// Extrato de pontos da gestante. Um crédito por agendamento confirmado (agendamento_id é UNIQUE no banco),
+// Extrato de pontos da gestante. Um crédito por agendamento confirmado e um débito por cupom resgatado (agendamento_id
+// e cupom_resgatado_id são UNIQUE no banco),
 // e fator_aplicado guarda o fator usado para o extrato continuar explicável se a regra de ponderação mudar.
 @Entity
 @Table(name = "transacao_pontos")
@@ -21,6 +22,10 @@ public class TransacaoPontos {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agendamento_id")
     private Agendamento agendamento;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cupom_resgatado_id")
+    private CupomResgatado cupomResgatado;
 
     @Enumerated(EnumType.STRING)
     private TipoTransacao tipo;
@@ -39,6 +44,15 @@ public class TransacaoPontos {
         this.tipo = tipo;
         this.pontos = pontos;
         this.fatorAplicado = fatorAplicado;
+        this.dataHora = LocalDateTime.now();
+    }
+
+    // Débito pelo resgate de um cupom
+    public TransacaoPontos(Gestante gestante, CupomResgatado cupomResgatado, int pontos) {
+        this.gestante = gestante;
+        this.cupomResgatado = cupomResgatado;
+        this.tipo = TipoTransacao.DEBITO;
+        this.pontos = pontos;
         this.dataHora = LocalDateTime.now();
     }
 
@@ -66,8 +80,14 @@ public class TransacaoPontos {
         return dataHora;
     }
 
-    // shortcut: o débito ainda não aponta para o cupom (cupom_resgatado vem com o resgate); trocar pela descrição do cupom resgatado
+    public CupomResgatado getCupomResgatado() {
+        return cupomResgatado;
+    }
+
     public String getDescricao() {
-        return agendamento != null ? agendamento.getTipo().getNome() : "Resgate de cupom";
+        if (agendamento != null) {
+            return agendamento.getTipo().getNome();
+        }
+        return cupomResgatado != null ? "Cupom: " + cupomResgatado.getCupom().getDescricao() : "Resgate de cupom";
     }
 }

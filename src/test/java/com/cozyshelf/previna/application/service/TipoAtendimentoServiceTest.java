@@ -205,4 +205,28 @@ class TipoAtendimentoServiceTest {
 
         assertThrows(DadosInvalidosException.class, () -> service.paraAgendamento(ANA, 99L));
     }
+
+    @Test
+    void recusaRenomearParaUmNomeQueOMedicoJaUsa() {
+        when(tipoRepository.findByIdAndCriadoPor(2L, ANA)).thenReturn(Optional.of(daAna));
+        when(tipoRepository.existsByNomeAndCriadoPor("Ultrassom 3D", ANA)).thenReturn(true);
+
+        var erro = assertThrows(ConflitoException.class,
+                () -> service.atualizar(ANA, 2L, dados("Ultrassom 3D", CategoriaAtendimento.EXAME, true)));
+
+        assertEquals("Você já tem um tipo com esse nome", erro.getMessage());
+        assertEquals("Ultrassom 4D", daAna.getNome());
+    }
+
+    // O nome é aparado antes de comparar e de gravar: " Ultrassom 4D " é o mesmo tipo
+    @Test
+    void renomeiaParaUmNomeLivreAparandoOsEspacos() {
+        when(tipoRepository.findByIdAndCriadoPor(2L, ANA)).thenReturn(Optional.of(daAna));
+
+        var resposta = service.atualizar(ANA, 2L, dados("  Ultrassom morfológico ", CategoriaAtendimento.EXAME, true));
+
+        verify(tipoRepository).existsByNomeAndCriadoPor("Ultrassom morfológico", ANA);
+        assertEquals("Ultrassom morfológico", resposta.nome());
+        assertEquals("Ultrassom morfológico", daAna.getNome());
+    }
 }
