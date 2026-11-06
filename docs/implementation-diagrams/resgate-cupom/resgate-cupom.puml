@@ -1,5 +1,5 @@
 @startuml resgate-cupom
-title Resgate de cupom pela gestante (previsto)
+title Resgate de cupom pela gestante
 
 |CupomController|
 start

@@ -8,6 +8,7 @@ import com.cozyshelf.previna.application.dto.response.EmpresaResumoResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PerfilEmpresaResponse;
 import com.cozyshelf.previna.application.exception.ConflitoException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.LogoEmpresa;
 import com.cozyshelf.previna.domain.model.StatusConta;
@@ -78,7 +79,8 @@ public class EmpresaService {
 
     @Transactional
     public void concluirPrimeiroAcesso(Long idEmpresa, PrimeiroAcessoEmpresaRequest dados, MultipartFile logo) {
-        EmpresaParceira empresa = empresaRepository.findById(idEmpresa).orElseThrow();
+        EmpresaParceira empresa = empresaRepository.findById(idEmpresa)
+                .orElseThrow(() -> new NaoEncontradoException("Empresa não encontrada"));
         if (!empresa.primeiroAcessoPendente()) {
             throw new ConflitoException("Primeiro acesso já concluído");
         }

@@ -100,7 +100,7 @@ public class GestanteController {
 
     // Multipart para levar a foto (opcional) junto com os dados
     @PutMapping(value = "/primeiro-acesso", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('PRIMEIRO_ACESSO')")
+    @PreAuthorize("hasRole('PRIMEIRO_ACESSO_GESTANTE')")
     @Operation(summary = "Troca as credenciais temporárias, registra os dados complementares e a foto opcional, ativa a conta e emite um novo token")
     public ResponseEntity<TokenResponse> concluirPrimeiroAcesso(
             @ModelAttribute @Valid PrimeiroAcessoRequest dados,

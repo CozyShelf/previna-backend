@@ -82,6 +82,14 @@ public class Gestante extends Usuario {
         this.senhaTemporaria = null;
     }
 
+    // Quem debita é o CupomService, no resgate, com a gestante travada e o saldo já conferido
+    public void debitarPontos(int pontos) {
+        if (pontos > saldoPontos) {
+            throw new IllegalStateException("Saldo de pontos insuficiente");
+        }
+        this.saldoPontos -= pontos;
+    }
+
     public boolean tutorialPendente() {
         return !tutorialConcluido;
     }

@@ -131,7 +131,8 @@ public class GestanteService {
 
     @Transactional
     public void concluirPrimeiroAcesso(Long idGestante, PrimeiroAcessoRequest dados, MultipartFile foto) {
-        Gestante gestante = gestanteRepository.findById(idGestante).orElseThrow();
+        Gestante gestante = gestanteRepository.findById(idGestante)
+                .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
         if (!gestante.primeiroAcessoPendente()) {
             throw new ConflitoException("Primeiro acesso já concluído");
         }

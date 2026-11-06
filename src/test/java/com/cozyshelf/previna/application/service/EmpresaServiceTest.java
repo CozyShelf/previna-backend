@@ -4,6 +4,7 @@ import com.cozyshelf.previna.application.dto.request.AtualizacaoPerfilEmpresaReq
 import com.cozyshelf.previna.application.dto.request.PreCadastroEmpresaRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoEmpresaRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.LogoEmpresa;
@@ -154,5 +155,15 @@ class EmpresaServiceTest {
         assertThrows(ConflitoException.class, () -> service.atualizarPerfil(1L, new AtualizacaoPerfilEmpresaRequest(
                 "medico@previna.com", "1133334444", "Ana Souza", "Rua A", "Farmácia", null, false), null));
         assertEquals("contato@bemnascer.com", empresa.getEmail());
+    }
+
+    // Token temporário de outro tipo de conta (ou de conta que não existe mais): 404, e não 500
+    @Test
+    void primeiroAcessoDeContaQueNaoEDesteTipoResponde404() {
+        when(empresaRepository.findById(99L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class,
+                () -> service.concluirPrimeiroAcesso(99L, primeiroAcesso("bemnascer", "novaSenha1"), null));
+        assertEquals("Empresa não encontrada", erro.getMessage());
     }
 }

@@ -10,11 +10,12 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.List;
 
-// Traz o agendamento e o tipo de atendimento na mesma consulta, em vez de uma por transação: a descrição vem deles
+// Traz o agendamento e o tipo de atendimento (crédito) ou o cupom e o produto (débito) na mesma consulta, em vez de
+// uma por transação: a descrição vem deles
 public interface TransacaoPontosRepository extends JpaRepository<TransacaoPontos, Long>,
         JpaSpecificationExecutor<TransacaoPontos> {
     @Override
-    @EntityGraph(attributePaths = "agendamento.tipo")
+    @EntityGraph(attributePaths = {"agendamento.tipo", "cupomResgatado.cupom.produto"})
     List<TransacaoPontos> findAll(Specification<TransacaoPontos> filtro, Sort ordem);
 
     @EntityGraph(attributePaths = "agendamento.tipo")

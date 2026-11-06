@@ -115,4 +115,54 @@ class MedicoServiceTest {
 
         assertThrows(NaoEncontradoException.class, () -> service.buscar(9L));
     }
+
+    // No cadastro tudo é conferido: CPF e e-mail de qualquer usuário (gestante, empresa) já bloqueiam
+    @Test
+    void recusaCpfDeOutroUsuarioNoCadastro() {
+        when(usuarioRepository.existsByCpf(CPF)).thenReturn(true);
+
+        var erro = assertThrows(ConflitoException.class, () -> service.cadastrar(dados("ana.souza", "senhaForte1")));
+        assertEquals("CPF já cadastrado", erro.getMessage());
+        verify(medicoRepository, never()).save(any());
+    }
+
+    @Test
+    void recusaEmailDeOutroUsuarioNoCadastro() {
+        when(usuarioRepository.existsByEmail("ana@clinica.com")).thenReturn(true);
+
+        var erro = assertThrows(ConflitoException.class, () -> service.cadastrar(dados("ana.souza", "senhaForte1")));
+        assertEquals("E-mail já cadastrado", erro.getMessage());
+    }
+
+    @Test
+    void recusaLoginEmUsoNoCadastro() {
+        when(usuarioRepository.existsByLogin("ana.souza")).thenReturn(true);
+
+        var erro = assertThrows(ConflitoException.class, () -> service.cadastrar(dados("ana.souza", "senhaForte1")));
+        assertEquals("Login indisponível", erro.getMessage());
+    }
+
+    // Na edição, trocar o CPF por um que já existe é conflito; os demais campos, mantidos, não são conferidos
+    @Test
+    void recusaTrocarOCpfPorUmDeOutroUsuario() {
+        when(medicoRepository.findById(1L)).thenReturn(Optional.of(medico));
+        when(usuarioRepository.existsByCpf("11144477735")).thenReturn(true);
+
+        var erro = assertThrows(ConflitoException.class, () -> service.atualizar(1L, new MedicoRequest("Ana Souza",
+                "11144477735", "ana@clinica.com", "CRM-SP 123456", "ana.souza", null, false)));
+
+        assertEquals("CPF já cadastrado", erro.getMessage());
+        assertEquals(CPF, medico.getCpf());
+        verify(medicoRepository, never()).existsByCrm(any());
+    }
+
+    @Test
+    void buscaDevolveOsDadosSemASenha() {
+        when(medicoRepository.findById(1L)).thenReturn(Optional.of(medico));
+
+        var resposta = service.buscar(1L);
+
+        assertEquals("CRM-SP 123456", resposta.crm());
+        assertEquals("ana.souza", resposta.login());
+    }
 }
