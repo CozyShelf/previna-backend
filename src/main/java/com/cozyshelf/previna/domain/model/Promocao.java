@@ -37,6 +37,16 @@ public class Promocao {
         this.categoria = categoria;
     }
 
+    public void atualizar(String titulo, String descricao, BigDecimal desconto, LocalDate dataInicio,
+                          LocalDate dataFim, Categoria categoria) {
+        this.titulo = titulo;
+        this.descricao = descricao;
+        this.desconto = desconto;
+        this.dataInicio = dataInicio;
+        this.dataFim = dataFim;
+        this.categoria = categoria;
+    }
+
     public Long getId() {
         return id;
     }

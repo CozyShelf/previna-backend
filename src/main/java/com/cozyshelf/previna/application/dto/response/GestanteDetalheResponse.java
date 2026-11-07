@@ -14,5 +14,7 @@ public record GestanteDetalheResponse(
         LocalDate dataProvavelParto,
         int saldoPontos,
         boolean primeiroAcessoPendente,
-        String medico
+        String medico,
+        // Só enquanto o primeiro acesso está pendente; omitido depois (e nas pré-cadastradas antes da V13)
+        CredenciaisTemporariasResponse credenciaisTemporarias
 ) {}

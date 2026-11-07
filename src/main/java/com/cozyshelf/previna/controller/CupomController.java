@@ -51,6 +51,23 @@ public class CupomController {
         return ResponseEntity.status(HttpStatus.CREATED).body(cupomService.cadastrar(empresa.id(), dados));
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Retorna um cupom da empresa autenticada")
+    public ResponseEntity<CupomResponse> buscar(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UsuarioAutenticado empresa) {
+        return ResponseEntity.ok(cupomService.buscar(empresa.id(), id));
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Atualiza um cupom da empresa autenticada; a situação (ativo) não muda")
+    public ResponseEntity<CupomResponse> atualizar(
+            @PathVariable Long id,
+            @RequestBody @Valid CupomRequest dados,
+            @AuthenticationPrincipal UsuarioAutenticado empresa) {
+        return ResponseEntity.ok(cupomService.atualizar(empresa.id(), id, dados));
+    }
+
     @PutMapping("/{id}/ativo")
     @Operation(summary = "Ativa ou desativa um cupom da empresa autenticada")
     public ResponseEntity<CupomResponse> alterarAtivo(

@@ -65,7 +65,7 @@ public class GestanteService {
                 senhaAleatoria
         );
 
-        gestanteRepository.save(new Gestante(
+        Gestante gestante = new Gestante(
                 dados.nome(),
                 dados.cpf(),
                 dados.email(),
@@ -75,7 +75,9 @@ public class GestanteService {
                 dados.dataNascimento(),
                 dados.telefone(),
                 dados.dum()
-        ));
+        );
+        gestante.guardarSenhaTemporaria(credenciais.senha());
+        gestanteRepository.save(gestante);
 
         return credenciais;
     }
@@ -113,7 +115,10 @@ public class GestanteService {
         return new GestanteDetalheResponse(gestante.getId(), gestante.getNome(), gestante.getCpf(),
                 gestante.getTelefone(), gestante.getEmail(), gestante.getDataNascimento(), gestante.getDum(),
                 gestante.getDataProvavelParto(), gestante.getSaldoPontos(), gestante.primeiroAcessoPendente(),
-                gestante.getMedico().getNome());
+                gestante.getMedico().getNome(),
+                // Só o médico responsável: quem vê todas as gestantes poderia fazer o primeiro acesso por ela
+                gestante.getSenhaTemporaria() == null || !idMedico.equals(gestante.getMedico().getId()) ? null
+                        : new CredenciaisTemporariasResponse(gestante.getLogin(), gestante.getSenhaTemporaria()));
     }
 
     // Mesma regra do gestanteDoMedico, para quem já tem a gestante em mãos (ex.: a partir de um agendamento)
@@ -126,7 +131,8 @@ public class GestanteService {
 
     @Transactional
     public void concluirPrimeiroAcesso(Long idGestante, PrimeiroAcessoRequest dados, MultipartFile foto) {
-        Gestante gestante = gestanteRepository.findById(idGestante).orElseThrow();
+        Gestante gestante = gestanteRepository.findById(idGestante)
+                .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
         if (!gestante.primeiroAcessoPendente()) {
             throw new ConflitoException("Primeiro acesso já concluído");
         }

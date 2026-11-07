@@ -67,6 +67,23 @@ public class Cupom {
         return ativo;
     }
 
+    // A situação (ativo) não muda aqui: tem a própria ação
+    public void atualizar(Produto produto, BigDecimal desconto, LocalDate dataValidade, Integer pontosNecessarios) {
+        this.produto = produto;
+        this.desconto = desconto;
+        this.dataValidade = dataValidade;
+        this.pontosNecessarios = pontosNecessarios;
+    }
+
+    public Long getEmpresaId() {
+        return empresaId;
+    }
+
+    // Disponível para resgate: ativo e com a validade não vencida (vale até o fim do dia da validade)
+    public boolean disponivelEm(LocalDate dia) {
+        return ativo && !dataValidade.isBefore(dia);
+    }
+
     public void alterarAtivo(boolean ativo) {
         this.ativo = ativo;
     }

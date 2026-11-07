@@ -1,12 +1,17 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.ExtratoRequest;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
 import com.cozyshelf.previna.domain.model.Agendamento;
+import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
+import com.cozyshelf.previna.domain.model.Cupom;
+import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.DadosSocioeconomicos;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
+import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.model.TipoTransacao;
@@ -122,6 +127,55 @@ class PontuacaoServiceTest {
 
     private TransacaoPontos debito(int pontos) {
         return new TransacaoPontos(gestante, null, TipoTransacao.DEBITO, pontos, null);
+    }
+
+    @Test
+    void debitaDoSaldoERegistraODebitoApontandoParaOCupomResgatado() {
+        Campos.definir(gestante, "saldoPontos", 500);
+        var fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
+        var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), gestante,
+                "ABCD2345");
+
+        assertEquals(300, service.debitarPontos(gestante, 200, resgatado));
+
+        var salva = ArgumentCaptor.forClass(TransacaoPontos.class);
+        verify(transacaoRepository).save(salva.capture());
+        assertEquals(TipoTransacao.DEBITO, salva.getValue().getTipo());
+        assertEquals(200, salva.getValue().getPontos());
+        assertSame(resgatado, salva.getValue().getCupomResgatado());
+        assertEquals("Cupom: 10% de desconto em Fralda RN", salva.getValue().getDescricao());
+        assertEquals(300, gestante.getSaldoPontos());
+    }
+
+    @Test
+    void naoDebitaMaisDoQueOSaldoNemDeixaNegativo() {
+        Campos.definir(gestante, "saldoPontos", 100);
+
+        assertThrows(IllegalStateException.class, () -> gestante.debitarPontos(101));
+        assertEquals(100, gestante.getSaldoPontos());
+        gestante.debitarPontos(100);
+        assertEquals(0, gestante.getSaldoPontos());
+    }
+
+    @Test
+    void travaAGestantePelaConsultaComLock() {
+        when(gestanteRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(gestante));
+
+        assertSame(gestante, service.travarGestante(1L));
+        verify(gestanteRepository, never()).findById(any());
+    }
+
+    @Test
+    void gestanteInexistenteNaTravaResponde404() {
+        when(gestanteRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.travarGestante(1L));
+        assertEquals("Gestante não encontrada", erro.getMessage());
+    }
+
+    @Test
+    void debitoSemCupomAntigoContinuaComADescricaoGenerica() {
+        assertEquals("Resgate de cupom", debito(10).getDescricao());
     }
 
     @Test

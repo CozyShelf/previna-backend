@@ -239,4 +239,16 @@ class TipoAtendimentoServiceTest {
 
         assertThrows(DadosInvalidosException.class, () -> service.paraAgendamento(ANA, 99L));
     }
+
+    // O nome é aparado antes de comparar e de gravar: " Ultrassom 4D " é o mesmo tipo
+    @Test
+    void renomeiaParaUmNomeLivreAparandoOsEspacos() {
+        when(tipoRepository.findByIdAndCriadoPorAndAtivoTrue(2L, ANA)).thenReturn(Optional.of(daAna));
+
+        var resposta = service.atualizar(ANA, 2L, dados("  Ultrassom morfológico ", CategoriaAtendimento.EXAME));
+
+        verify(tipoRepository).existsByNomeAndCriadoPorAndAtivoTrue("Ultrassom morfológico", ANA);
+        assertEquals("Ultrassom morfológico", resposta.nome());
+        assertEquals("Ultrassom morfológico", daAna.getNome());
+    }
 }

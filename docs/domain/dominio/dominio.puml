@@ -156,13 +156,14 @@ entity transacao_pontos {
   --
   * gestante_id : bigint <<FK>>
   agendamento_id : bigint <<FK>> <<UK>>
+  cupom_resgatado_id : bigint <<FK>> <<UK>>
   * tipo : CREDITO | DEBITO
   * pontos : int
   fator_aplicado : decimal
   * data_hora : timestamp
 }
 
-entity cupom_resgatado <<previsto>> {
+entity cupom_resgatado {
   * id : bigint <<PK>>
   --
   * cupom_id : bigint <<FK>>
@@ -235,7 +236,7 @@ medico |o--o{ tipo_atendimento : criado_por
 
 gestante ||--o{ transacao_pontos
 agendamento |o--o| transacao_pontos
-cupom_resgatado |o..o| transacao_pontos : cupom_resgatado_id (previsto)
+cupom_resgatado |o--o| transacao_pontos : cupom_resgatado_id
 agendamento |o--o{ log_auditoria
 transacao_pontos |o--o{ log_auditoria
 
