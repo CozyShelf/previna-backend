@@ -74,7 +74,7 @@ src/main/java/com/cozyshelf/previna/
     config/         Spring Security e Spring MVC
     email/          envio de e-mails
 src/main/resources/
-  db/migration/     migrações Flyway (V1 a V13)
+  db/migration/     migrações Flyway (V1 a V14)
   db/seed/          dados de exemplo, só no profile dev
 docs/               modelo lógico, casos de uso e diagramas de sequência (ver docs/README.md)
 ```

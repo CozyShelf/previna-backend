@@ -9,7 +9,7 @@ Cada diagrama tem a sua pasta, com o fonte (`.puml`, PlantUML) e a imagem (`.png
 
 Para gerar a imagem de novo depois de editar o fonte: `java -jar plantuml.jar -tpng <pasta>/<nome>.puml` (PlantUML 1.2024.7). O modelo lógico e os casos de uso usam o layout `smetana`, que não precisa do Graphviz.
 
-No modelo lógico, as tabelas em cinza ainda não têm migração (conteúdos e auditoria); as demais seguem as migrações V1 a V13.
+No modelo lógico, as tabelas em cinza ainda não têm migração (conteúdos e auditoria); as demais seguem as migrações V1 a V14.
 
 ## Decisões
 

@@ -93,6 +93,28 @@ class GestanteServiceTest {
                 () -> service.concluirPrimeiroAcesso(1L, primeiroAcesso("outro.login", "outraSenha2"), null));
     }
 
+    // O médico reconsulta as credenciais temporárias até a gestante concluir o primeiro acesso
+    @Test
+    void detalheMostraCredenciaisTemporariasAteOPrimeiroAcesso() {
+        Medico ana = Campos.definir(medico(false), "id", 7L);
+        when(medicoRepository.getReferenceById(7L)).thenReturn(ana);
+        when(medicoRepository.findById(7L)).thenReturn(Optional.of(ana));
+        var credenciais = service.preCadastrar(new PreCadastroGestanteRequest("Maria", "12345678909",
+                LocalDate.of(1995, 1, 1), "11999999999", null, LocalDate.now()), 7L);
+        ArgumentCaptor<Gestante> salva = ArgumentCaptor.forClass(Gestante.class);
+        verify(gestanteRepository).save(salva.capture());
+        when(gestanteRepository.findById(1L)).thenReturn(Optional.of(salva.getValue()));
+        when(gestanteRepository.findByIdAndMedicoId(1L, 7L)).thenReturn(Optional.of(salva.getValue()));
+
+        assertEquals(credenciais, service.buscarDetalhe(7L, 1L).credenciaisTemporarias());
+        assertTrue(passwordEncoder.matches(credenciais.senha(), salva.getValue().getSenhaHash()));
+
+        service.concluirPrimeiroAcesso(1L, primeiroAcesso("maria.silva", "novaSenha1"), null);
+
+        assertNull(salva.getValue().getSenhaTemporaria());
+        assertNull(service.buscarDetalhe(7L, 1L).credenciaisTemporarias());
+    }
+
     private static Medico medico(boolean verTodasGestantes) {
         return new Medico("Ana Souza", "52998224725", "ana@clinica.com", "CRM-SP 123456", "ana.souza", "hash",
                 verTodasGestantes);
@@ -235,13 +257,19 @@ class GestanteServiceTest {
     @Test
     void medicoComPermissaoVeGestanteDeOutroMedico() {
         Medico supervisor = new Medico("Dr. Bruno", "22222222222", null, "CRM-SP 2", "bruno", "hash", true);
-        Medico outro = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
+        Medico outro = Campos.definir(
+                new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false), "id", 7L);
         Gestante deOutro = new Gestante("Joana", "98765432100", null, "98765432100", "hash",
                 outro, LocalDate.of(1998, 5, 2), "11988888888", LocalDate.of(2026, 2, 1));
+        deOutro.guardarSenhaTemporaria("Ab3dEf7h");
         when(medicoRepository.findById(9L)).thenReturn(Optional.of(supervisor));
         when(gestanteRepository.findById(3L)).thenReturn(Optional.of(deOutro));
 
-        assertEquals("Dra. Ana", service.buscarDetalhe(9L, 3L).medico());
+        var detalhe = service.buscarDetalhe(9L, 3L);
+
+        assertEquals("Dra. Ana", detalhe.medico());
+        // As credenciais temporárias ficam só com o médico responsável
+        assertNull(detalhe.credenciaisTemporarias());
         verify(gestanteRepository, never()).findByIdAndMedicoId(any(), any());
     }
 
