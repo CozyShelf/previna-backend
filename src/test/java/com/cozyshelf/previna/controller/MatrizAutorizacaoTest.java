@@ -2,6 +2,7 @@ package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.service.AgendamentoService;
 import com.cozyshelf.previna.application.service.AuthService;
+import com.cozyshelf.previna.application.service.ConteudoService;
 import com.cozyshelf.previna.application.service.CupomService;
 import com.cozyshelf.previna.application.service.EmpresaService;
 import com.cozyshelf.previna.application.service.GestanteService;
@@ -83,6 +84,8 @@ class MatrizAutorizacaoTest {
              "login":"ana.souza","senha":"senha1234","verTodasGestantes":false}""";
     private static final String TIPO_VALIDO = """
             {"nome":"Ultrassom 4D","categoria":"EXAME","pontosBase":30,"ativo":true}""";
+    private static final Map<String, String> CONTEUDO_VALIDO = Map.of("titulo", "Pré-natal em dia",
+            "categoria", "DICA", "tipo", "TEXTO", "corpo", "Vá a todas as consultas.");
 
     // ---- A matriz: método, caminho (como no @XxxMapping), corpo e quem pode ----
 
@@ -92,6 +95,7 @@ class MatrizAutorizacaoTest {
             Rota.post("/auth/login", json("{\"login\":\"ana\",\"senha\":\"segredo123\"}"), PUBLICA),
             Rota.get("/empresas/{id}/logo", PUBLICA),
             Rota.get("/empresas/produtos/{id}/imagem", PUBLICA),
+            Rota.get("/conteudos/{id}/imagem", PUBLICA),
 
             // Qualquer autenticado, inclusive no primeiro acesso (o portal precisa saber quem entrou)
             Rota.get("/auth/perfil", AUTENTICADA),
@@ -105,6 +109,14 @@ class MatrizAutorizacaoTest {
             Rota.post("/empresas/pre-cadastro", json("""
                     {"razaoSocial":"Farmácia Vida","cnpj":"11222333000181","email":"contato@vida.com",
                      "telefone":"1133334444","responsavel":"Carla"}"""), EnumSet.of(ADMIN)),
+            Rota.postMultipart("/conteudos", CONTEUDO_VALIDO, EnumSet.of(ADMIN)),
+            Rota.putMultipart("/conteudos/{id}", CONTEUDO_VALIDO, EnumSet.of(ADMIN)),
+            Rota.put("/conteudos/{id}/publicado", json("{\"publicado\":true}"), EnumSet.of(ADMIN)),
+            Rota.delete("/conteudos/{id}", EnumSet.of(ADMIN)),
+
+            // Administrador e gestante: o admin vê também os rascunhos, a gestante só os publicados
+            Rota.get("/conteudos", EnumSet.of(ADMIN, GESTANTE)),
+            Rota.get("/conteudos/{id}", EnumSet.of(ADMIN, GESTANTE)),
 
             // Médico
             Rota.get("/gestantes", EnumSet.of(MEDICO)),
@@ -188,6 +200,8 @@ class MatrizAutorizacaoTest {
     @MockitoBean
     private AuthService authService;
     @MockitoBean
+    private ConteudoService conteudoService;
+    @MockitoBean
     private CupomService cupomService;
     @MockitoBean
     private EmpresaService empresaService;
@@ -205,7 +219,7 @@ class MatrizAutorizacaoTest {
     private TipoAtendimentoService tipoAtendimentoService;
 
     private Object[] servicos() {
-        return new Object[]{agendamentoService, authService, cupomService, empresaService, gestanteService,
+        return new Object[]{agendamentoService, authService, conteudoService, cupomService, empresaService, gestanteService,
                 medicoService, pontuacaoService, produtoService, promocaoService, tipoAtendimentoService};
     }
 

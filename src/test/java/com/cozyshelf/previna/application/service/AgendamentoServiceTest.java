@@ -23,6 +23,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import com.cozyshelf.previna.domain.Campos;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,9 +47,9 @@ class AgendamentoServiceTest {
     private final Gestante gestante = Campos.definir(new Gestante("Maria", "12345678909", null, "12345678909",
             "hash", medico, LocalDate.of(1995, 1, 1), "11999999999", LocalDate.now()), "id", 1L);
     private final TipoAtendimento hemograma = Campos.definir(
-            new TipoAtendimento(null, "Hemograma completo", CategoriaAtendimento.EXAME, 25, true), "id", 3L);
+            new TipoAtendimento(null, "Hemograma completo", CategoriaAtendimento.EXAME, 25), "id", 3L);
     private final TipoAtendimento consulta = Campos.definir(
-            new TipoAtendimento(7L, "Consulta puerperal", CategoriaAtendimento.CONSULTA, 50, true), "id", 4L);
+            new TipoAtendimento(7L, "Consulta puerperal", CategoriaAtendimento.CONSULTA, 50), "id", 4L);
 
     @BeforeEach
     void setUp() {
@@ -366,7 +367,7 @@ class AgendamentoServiceTest {
                 agendamento(1L, StatusAgendamento.REALIZADO, LocalDate.of(2026, 1, 10)),
                 agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.of(2026, 1, 20))));
 
-        var resposta = service.listarDaGestanteAutenticada(1L);
+        var resposta = service.listarDaGestanteAutenticada(1L, null);
 
         assertEquals(List.of(2L, 1L), resposta.stream().map(AgendamentoResponse::id).toList());
         verify(agendamentoRepository).findByGestanteId(1L);
@@ -377,7 +378,47 @@ class AgendamentoServiceTest {
     void gestanteSemAgendamentosDevolveListaVaziaNoApp() {
         when(agendamentoRepository.findByGestanteId(1L)).thenReturn(List.of());
 
-        assertEquals(List.of(), service.listarDaGestanteAutenticada(1L));
+        assertEquals(List.of(), service.listarDaGestanteAutenticada(1L, null));
+    }
+
+    // A home do app só mostra o que o médico ainda não resolveu. Data prevista no passado continua
+    // pendente: o que define é o status, não o calendário.
+    @Test
+    void pendentesDoAppIncluemOAtrasadoEVemDoMaisProximo() {
+        when(agendamentoRepository.findByGestanteIdAndStatus(1L, StatusAgendamento.AGENDADO)).thenReturn(List.of(
+                agendamento(1L, StatusAgendamento.AGENDADO, LocalDate.now().plusDays(10)),
+                agendamento(2L, StatusAgendamento.AGENDADO, LocalDate.now().minusDays(5))));
+
+        var resposta = service.listarDaGestanteAutenticada(1L, true);
+
+        assertEquals(List.of(2L, 1L), resposta.stream().map(AgendamentoResponse::id).toList());
+        verify(agendamentoRepository, never()).findByGestanteId(any());
+    }
+
+    // O histórico vai do mais recente para o mais antigo, pela data em que o médico registrou o desfecho
+    @Test
+    void historicoDoAppVemDoDesfechoMaisRecente() {
+        var antigo = resolvido(1L, StatusAgendamento.REALIZADO, LocalDateTime.of(2026, 1, 10, 9, 0));
+        var recente = resolvido(2L, StatusAgendamento.NAO_COMPARECEU, LocalDateTime.of(2026, 3, 2, 14, 30));
+        when(agendamentoRepository.findByGestanteIdAndStatusNot(1L, StatusAgendamento.AGENDADO))
+                .thenReturn(List.of(antigo, recente));
+
+        var resposta = service.listarDaGestanteAutenticada(1L, false);
+
+        assertEquals(List.of(2L, 1L), resposta.stream().map(AgendamentoResponse::id).toList());
+    }
+
+    @Test
+    void historicoVazioDevolveListaVazia() {
+        when(agendamentoRepository.findByGestanteIdAndStatusNot(1L, StatusAgendamento.AGENDADO))
+                .thenReturn(List.of());
+
+        assertEquals(List.of(), service.listarDaGestanteAutenticada(1L, false));
+    }
+
+    private Agendamento resolvido(long id, StatusAgendamento status, LocalDateTime dataConfirmacao) {
+        var agendamento = agendamento(id, status, dataConfirmacao.toLocalDate());
+        return Campos.definir(agendamento, "dataConfirmacao", dataConfirmacao);
     }
 
     // Confirmar e registrar não comparecimento ao mesmo tempo liam o mesmo AGENDADO e um sobrescrevia o outro,

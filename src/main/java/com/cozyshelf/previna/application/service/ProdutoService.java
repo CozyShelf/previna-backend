@@ -62,7 +62,7 @@ public class ProdutoService {
                 Filtros.igual("empresaId", idEmpresa),
                 Filtros.igual("categoria", categoria),
                 Filtros.busca(listagem.busca(), null, "nome"));
-        return PaginaResponse.de(produtoRepository.findAll(filtro, listagem.ordenadaPor("nome"))
+        return PaginaResponse.de(produtoRepository.findAll(filtro, listagem.maisRecentes())
                 .map(ProdutoService::resposta));
     }
 

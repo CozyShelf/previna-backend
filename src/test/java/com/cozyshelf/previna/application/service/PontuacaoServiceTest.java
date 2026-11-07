@@ -49,7 +49,7 @@ class PontuacaoServiceTest {
             new Gestante("Maria", "12345678909", null, "12345678909", "hash", medico,
                     LocalDate.of(1995, 1, 1), "11999999999", LocalDate.now()), "id", 1L);
     private final TipoAtendimento hemograma =
-            new TipoAtendimento(3L, "Hemograma completo", CategoriaAtendimento.EXAME, 25, true);
+            new TipoAtendimento(3L, "Hemograma completo", CategoriaAtendimento.EXAME, 25);
     private final Agendamento agendamento =
             new Agendamento(gestante, hemograma, medico, LocalDate.now(), null);
 

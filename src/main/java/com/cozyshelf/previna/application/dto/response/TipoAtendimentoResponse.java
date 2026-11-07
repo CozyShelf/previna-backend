@@ -9,6 +9,5 @@ public record TipoAtendimentoResponse(
         String nome,
         CategoriaAtendimento categoria,
         Integer pontosBase,
-        boolean ativo,
         boolean padrao
 ) {}

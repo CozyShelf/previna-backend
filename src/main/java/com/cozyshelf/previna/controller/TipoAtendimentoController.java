@@ -33,7 +33,7 @@ public class TipoAtendimentoController {
     }
 
     @GetMapping
-    @Operation(summary = "Lista os tipos ativos que o médico pode escolher: os padrão e os dele")
+    @Operation(summary = "Lista os tipos que o médico pode escolher: os padrão e os dele")
     public ResponseEntity<List<TipoAtendimentoResponse>> disponiveis(
             @RequestParam(required = false) CategoriaAtendimento categoria,
             @AuthenticationPrincipal UsuarioAutenticado medico) {
@@ -66,7 +66,7 @@ public class TipoAtendimentoController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Atualiza um tipo do médico autenticado; é por aqui que ele é desativado")
+    @Operation(summary = "Atualiza um tipo do médico autenticado")
     public ResponseEntity<TipoAtendimentoResponse> atualizar(
             @PathVariable Long id,
             @RequestBody @Valid TipoAtendimentoRequest dados,
@@ -75,7 +75,7 @@ public class TipoAtendimentoController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Exclui um tipo do médico autenticado; recusa se já houver exames ou consultas nele")
+    @Operation(summary = "Exclui um tipo do médico autenticado; os exames e consultas já marcados nele continuam")
     public ResponseEntity<Response> excluir(
             @PathVariable Long id,
             @AuthenticationPrincipal UsuarioAutenticado medico) {

@@ -16,9 +16,16 @@ public record ListagemRequest(
 ) {
     private static final int TAMANHO_PADRAO = 20;
 
-    // O id desempata nomes iguais; sem ele, um registro poderia aparecer em duas páginas
-    public Pageable ordenadaPor(String campo) {
+    // Do mais recente para o mais antigo em todas as listagens. O id cresce a cada registro gravado,
+    // então ele é a ordem de cadastro e, por ser único, nenhum registro aparece em duas páginas
+    public Pageable maisRecentes() {
         return PageRequest.of(pagina == null ? 0 : pagina, tamanho == null ? TAMANHO_PADRAO : tamanho,
-                Sort.by(Sort.Order.asc(campo).ignoreCase(), Sort.Order.asc("id")));
+                Sort.by(Sort.Order.desc("id")));
+    }
+
+    // Para as consultas que já trazem o próprio ORDER BY (ex.: a ordem aleatória dos conteúdos):
+    // um Sort aqui seria acrescentado depois do da consulta e desfaria o sorteio
+    public Pageable semOrdem() {
+        return PageRequest.of(pagina == null ? 0 : pagina, tamanho == null ? TAMANHO_PADRAO : tamanho);
     }
 }

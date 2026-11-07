@@ -49,7 +49,7 @@ public class MedicoService {
         Specification<Medico> filtro = Specification.allOf(
                 Filtros.busca(listagem.busca(), "cpf", "nome", "crm", "email", "login"),
                 Filtros.igual("verTodasGestantes", verTodasGestantes));
-        return PaginaResponse.de(medicoRepository.findAll(filtro, listagem.ordenadaPor("nome"))
+        return PaginaResponse.de(medicoRepository.findAll(filtro, listagem.maisRecentes())
                 .map(MedicoService::resposta));
     }
 

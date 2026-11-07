@@ -91,10 +91,27 @@ public class AgendamentoService {
                 .toList();
     }
 
-    // No app, o id vem do token: a gestante só alcança os próprios, sem regra de médico
+    // Histórico do app: o que já foi resolvido, do mais recente para o mais antigo. dataConfirmacao
+    // nunca é nula fora do AGENDADO — o CHECK da migração V11 garante isso.
+    private static final Comparator<Agendamento> ORDEM_HISTORICO = Comparator
+            .comparing(Agendamento::getDataConfirmacao, Comparator.reverseOrder())
+            .thenComparing(Agendamento::getId, Comparator.reverseOrder());
+
+    // No app, o id vem do token: a gestante só alcança os próprios, sem regra de médico.
+    // pendentes nulo devolve tudo (a tela do portal); true é o que o médico ainda não resolveu,
+    // independente da data prevista já ter passado; false é o histórico.
     @Transactional(readOnly = true)
-    public List<AgendamentoResponse> listarDaGestanteAutenticada(Long idGestante) {
-        return ordenados(idGestante);
+    public List<AgendamentoResponse> listarDaGestanteAutenticada(Long idGestante, Boolean pendentes) {
+        if (pendentes == null) {
+            return ordenados(idGestante);
+        }
+        List<Agendamento> encontrados = pendentes
+                ? agendamentoRepository.findByGestanteIdAndStatus(idGestante, StatusAgendamento.AGENDADO)
+                : agendamentoRepository.findByGestanteIdAndStatusNot(idGestante, StatusAgendamento.AGENDADO);
+        return encontrados.stream()
+                .sorted(pendentes ? ORDEM : ORDEM_HISTORICO)
+                .map(AgendamentoService::resposta)
+                .toList();
     }
 
     // Status, transação de pontos, saldo e resposta na mesma transação: ou tudo é gravado, ou nada

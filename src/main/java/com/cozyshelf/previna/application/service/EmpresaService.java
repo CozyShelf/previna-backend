@@ -73,7 +73,7 @@ public class EmpresaService {
         Specification<EmpresaParceira> filtro = Specification.allOf(
                 Filtros.busca(listagem.busca(), "cnpj", "razaoSocial", "responsavel", "email"),
                 Filtros.igual("statusConta", situacao));
-        return PaginaResponse.de(empresaRepository.findAll(filtro, listagem.ordenadaPor("razaoSocial"))
+        return PaginaResponse.de(empresaRepository.findAll(filtro, listagem.maisRecentes())
                 .map(EmpresaService::resumo));
     }
 

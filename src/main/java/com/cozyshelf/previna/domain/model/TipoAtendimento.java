@@ -20,6 +20,9 @@ public class TipoAtendimento {
 
     // Pontos creditados à gestante na confirmação, antes do fator de ponderação
     private Integer pontosBase;
+
+    // Exclusão lógica (migração V14): falso é tipo excluído. A linha fica porque o agendamento aponta
+    // para ela, e o histórico da gestante perderia o nome do exame ou da consulta que ela fez.
     private boolean ativo;
 
     // Médico dono; nulo no tipo padrão, que veio da migração e não tem dono
@@ -28,13 +31,12 @@ public class TipoAtendimento {
     protected TipoAtendimento() {
     }
 
-    public TipoAtendimento(Long criadoPor, String nome, CategoriaAtendimento categoria, Integer pontosBase,
-                           boolean ativo) {
+    public TipoAtendimento(Long criadoPor, String nome, CategoriaAtendimento categoria, Integer pontosBase) {
         this.criadoPor = criadoPor;
         this.nome = nome;
         this.categoria = categoria;
         this.pontosBase = pontosBase;
-        this.ativo = ativo;
+        this.ativo = true;
     }
 
     public Long getId() {
@@ -75,12 +77,15 @@ public class TipoAtendimento {
         return padrao() || criadoPor.equals(idMedico);
     }
 
-    // Desativar é o caminho normal para tirar um tipo de circulação: os agendamentos antigos continuam
-    // apontando para ele, e a listagem de escolha deixa de oferecê-lo
-    public void atualizar(String nome, CategoriaAtendimento categoria, Integer pontosBase, boolean ativo) {
+    public void atualizar(String nome, CategoriaAtendimento categoria, Integer pontosBase) {
         this.nome = nome;
         this.categoria = categoria;
         this.pontosBase = pontosBase;
-        this.ativo = ativo;
+    }
+
+    // Tirar de circulação sem apagar: some da gestão e da lista de escolha, e os agendamentos antigos
+    // continuam apontando para cá
+    public void excluir() {
+        this.ativo = false;
     }
 }

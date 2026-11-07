@@ -174,15 +174,26 @@ entity cupom_resgatado {
   data_uso : timestamp
 }
 
-entity conteudo_informativo <<previsto>> {
+entity conteudo_informativo {
   * id : bigint <<PK>>
   --
   * autor_id : bigint <<FK>> (admin)
   * titulo : varchar
-  * corpo : text
-  categoria : varchar
+  * categoria : DICA | NOTICIA | AVISO
+  * tipo : TEXTO | FOTO | VIDEO | LINK
+  resumo : varchar
+  corpo : text (obrigatório no TEXTO)
+  midia_url : varchar (obrigatório fora do TEXTO)
   * publicado : boolean
+  * criado_em : timestamp
   publicado_em : timestamp
+}
+
+entity imagem_conteudo {
+  * conteudo_id : bigint <<PK>> <<FK>>
+  --
+  * conteudo : bytea
+  * tipo : varchar
 }
 
 entity log_auditoria <<previsto>> {
@@ -200,6 +211,7 @@ usuario ||--o| medico
 usuario ||--o| gestante
 usuario ||--o| empresa_parceira
 usuario ||--o{ conteudo_informativo
+conteudo_informativo ||--o| imagem_conteudo
 usuario ||--o{ log_auditoria
 
 medico ||--o{ gestante
