@@ -61,7 +61,7 @@ public class EmpresaController {
 
     // Multipart para levar a imagem do logo junto com os dados
     @PutMapping(value = "/primeiro-acesso", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('PRIMEIRO_ACESSO')")
+    @PreAuthorize("hasRole('PRIMEIRO_ACESSO_EMPRESA_PARCEIRA')")
     @Operation(summary = "Troca as credenciais temporárias, completa o cadastro (com o logo opcional), ativa a conta e emite um novo token")
     public ResponseEntity<TokenResponse> concluirPrimeiroAcesso(
             @ModelAttribute @Valid PrimeiroAcessoEmpresaRequest dados,

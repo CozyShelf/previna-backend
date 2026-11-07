@@ -5,7 +5,9 @@ import com.cozyshelf.previna.application.dto.response.AtividadePontuadaResponse;
 import com.cozyshelf.previna.application.dto.response.ExtratoResponse;
 import com.cozyshelf.previna.application.dto.response.PontuacaoResponse;
 import com.cozyshelf.previna.application.dto.response.TransacaoResponse;
+import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
+import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.DadosSocioeconomicos;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.StatusAgendamento;
@@ -69,6 +71,22 @@ public class PontuacaoService {
         transacaoRepository.save(new TransacaoPontos(gestante, agendamento, TipoTransacao.CREDITO, pontos, fator));
         gestante.creditarPontos(pontos);
         return pontos;
+    }
+
+    // Trava a gestante (SELECT ... FOR UPDATE) até o fim da transação de quem chama, o resgate de cupom: o saldo lido
+    // aqui é o que o débito vai usar, e um segundo resgate simultâneo espera este terminar.
+    public Gestante travarGestante(Long idGestante) {
+        // Token válido de uma gestante que não existe mais responde 404, e não 500
+        return gestanteRepository.findByIdParaAtualizar(idGestante)
+                .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
+    }
+
+    // Débito pelo resgate de um cupom, com a gestante já travada e o saldo já conferido por quem chama.
+    // Sem @Transactional próprio, como o crédito: cupom resgatado, transação e saldo são gravados juntos.
+    public int debitarPontos(Gestante gestante, int pontos, CupomResgatado cupomResgatado) {
+        transacaoRepository.save(new TransacaoPontos(gestante, cupomResgatado, pontos));
+        gestante.debitarPontos(pontos);
+        return gestante.getSaldoPontos();
     }
 
     // O saldo é o da gestante, atualizado a cada crédito e débito, e não a soma das transações

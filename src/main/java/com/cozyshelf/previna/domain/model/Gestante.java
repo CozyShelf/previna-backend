@@ -23,6 +23,8 @@ public class Gestante extends Usuario {
     private boolean consentimentoLgpd;
     private LocalDateTime dataConsentimento;
     private boolean tutorialConcluido;
+    // Em claro só até o primeiro acesso, para o médico reconsultá-la; o login confere o senhaHash
+    private String senhaTemporaria;
 
     protected Gestante() {
     }
@@ -64,6 +66,28 @@ public class Gestante extends Usuario {
     // Total mantido junto com o extrato (transacao_pontos): quem credita é o PontuacaoService, na confirmação
     public void creditarPontos(int pontos) {
         this.saldoPontos += pontos;
+    }
+
+    public String getSenhaTemporaria() {
+        return senhaTemporaria;
+    }
+
+    public void guardarSenhaTemporaria(String senha) {
+        this.senhaTemporaria = senha;
+    }
+
+    @Override
+    public void concluirPrimeiroAcesso(String login, String senhaHash) {
+        super.concluirPrimeiroAcesso(login, senhaHash);
+        this.senhaTemporaria = null;
+    }
+
+    // Quem debita é o CupomService, no resgate, com a gestante travada e o saldo já conferido
+    public void debitarPontos(int pontos) {
+        if (pontos > saldoPontos) {
+            throw new IllegalStateException("Saldo de pontos insuficiente");
+        }
+        this.saldoPontos -= pontos;
     }
 
     public boolean tutorialPendente() {
