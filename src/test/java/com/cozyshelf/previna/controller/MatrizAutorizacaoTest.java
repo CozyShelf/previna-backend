@@ -151,8 +151,16 @@ class MatrizAutorizacaoTest {
             Rota.post("/empresas/promocoes", json("""
                     {"titulo":"Semana do bebê","desconto":10,"dataInicio":"%s","dataFim":"%s","categoria":"FRALDAS"}"""
                     .formatted(LocalDate.now(), LocalDate.now().plusDays(7))), EnumSet.of(EMPRESA_PARCEIRA)),
+            Rota.get("/empresas/promocoes/{id}", EnumSet.of(EMPRESA_PARCEIRA)),
+            Rota.put("/empresas/promocoes/{id}", json("""
+                    {"titulo":"Semana do bebê","desconto":10,"dataInicio":"%s","dataFim":"%s","categoria":"FRALDAS"}"""
+                    .formatted(LocalDate.now(), LocalDate.now().plusDays(7))), EnumSet.of(EMPRESA_PARCEIRA)),
             Rota.get("/empresas/cupons", EnumSet.of(EMPRESA_PARCEIRA)),
             Rota.post("/empresas/cupons", json("""
+                    {"produto":1,"desconto":10,"dataValidade":"%s","pontosNecessarios":100}"""
+                    .formatted(LocalDate.now().plusDays(30))), EnumSet.of(EMPRESA_PARCEIRA)),
+            Rota.get("/empresas/cupons/{id}", EnumSet.of(EMPRESA_PARCEIRA)),
+            Rota.put("/empresas/cupons/{id}", json("""
                     {"produto":1,"desconto":10,"dataValidade":"%s","pontosNecessarios":100}"""
                     .formatted(LocalDate.now().plusDays(30))), EnumSet.of(EMPRESA_PARCEIRA)),
             Rota.put("/empresas/cupons/{id}/ativo", json("{\"ativo\":false}"), EnumSet.of(EMPRESA_PARCEIRA)),
