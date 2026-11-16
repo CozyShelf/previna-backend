@@ -79,7 +79,9 @@ public class EmpresaService {
 
     @Transactional
     public void concluirPrimeiroAcesso(Long idEmpresa, PrimeiroAcessoEmpresaRequest dados, MultipartFile logo) {
-        EmpresaParceira empresa = empresaRepository.findById(idEmpresa)
+        // Trava a linha, como no primeiro acesso da gestante: a segunda conclusão simultânea espera e cai no
+        // "já concluído", em vez de sobrescrever as credenciais da primeira
+        EmpresaParceira empresa = empresaRepository.findByIdParaAtualizar(idEmpresa)
                 .orElseThrow(() -> new NaoEncontradoException("Empresa não encontrada"));
         if (!empresa.primeiroAcessoPendente()) {
             throw new ConflitoException("Primeiro acesso já concluído");

@@ -19,7 +19,8 @@ public interface GestanteRepository extends JpaRepository<Gestante, Long>, JpaSp
     // Gestante de outro médico não volta na busca: para quem não tem a permissão, ela responde como inexistente
     Optional<Gestante> findByIdAndMedicoId(Long id, Long medicoId);
 
-    // SELECT ... FOR UPDATE: dois resgates simultâneos da mesma gestante esperam um pelo outro e não passam do saldo
+    // SELECT ... FOR UPDATE: dois resgates simultâneos da mesma gestante esperam um pelo outro e não passam do saldo;
+    // duas conclusões do primeiro acesso, também
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select g from Gestante g where g.id = :id")
     Optional<Gestante> findByIdParaAtualizar(@Param("id") Long id);
