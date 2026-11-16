@@ -22,6 +22,7 @@ import com.cozyshelf.previna.domain.model.Usuario;
 import com.cozyshelf.previna.infrastructure.config.SecurityConfig;
 import com.cozyshelf.previna.infrastructure.security.JwtService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -55,6 +56,8 @@ import java.util.stream.Stream;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static com.cozyshelf.previna.controller.MatrizAutorizacaoTest.Papel.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -229,6 +232,13 @@ class MatrizAutorizacaoTest {
         return new Object[]{agendamentoService, authService, conteudoService, cupomService, empresaService, gestanteService,
                 medicoService, ofertaService, pontuacaoService, produtoService, promocaoService,
                 tipoAtendimentoService};
+    }
+
+    // O resgate escolhe o status (201 ou 200) pelo resultado do serviço; sem ele, o controller estouraria
+    // depois de passar pela porta. doReturn não conta como chamada ao serviço
+    @BeforeEach
+    void resultadoDoResgate() {
+        doReturn(new CupomService.Resgate(null, false)).when(cupomService).resgatar(any(), any(), any());
     }
 
     @AfterEach

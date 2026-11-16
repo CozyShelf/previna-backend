@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -179,7 +180,7 @@ class CupomServiceTest {
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(300);
 
-        var resposta = service.resgatar(5L, 7L);
+        var resposta = service.resgatar(5L, 7L, null).cupom();
 
         var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
         verify(resgatadoRepository).save(salvo.capture());
@@ -202,7 +203,7 @@ class CupomServiceTest {
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        var resposta = service.resgatar(5L, 7L);
+        var resposta = service.resgatar(5L, 7L, null).cupom();
 
         var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
         verify(resgatadoRepository).save(salvo.capture());
@@ -225,7 +226,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupom));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        service.resgatar(5L, 7L);
+        service.resgatar(5L, 7L, null);
         var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
         verify(resgatadoRepository).save(salvo.capture());
 
@@ -248,7 +249,7 @@ class CupomServiceTest {
         when(resgatadoRepository.existsByCodigo(any())).thenReturn(true, false);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        service.resgatar(5L, 7L);
+        service.resgatar(5L, 7L, null);
 
         verify(resgatadoRepository, times(2)).existsByCodigo(any());
     }
@@ -257,7 +258,7 @@ class CupomServiceTest {
     void naoResgataCupomInexistente() {
         when(cupomRepository.findById(5L)).thenReturn(Optional.empty());
 
-        var erro = assertThrows(NaoEncontradoException.class, () -> service.resgatar(5L, 7L));
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom não encontrado", erro.getMessage());
         verifyNoInteractions(pontuacaoService, resgatadoRepository);
     }
@@ -269,7 +270,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupom));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestanteComSaldo(500));
 
-        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L));
+        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
         verify(resgatadoRepository, never()).save(any());
     }
@@ -280,7 +281,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(vencido));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestanteComSaldo(500));
 
-        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L));
+        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
     }
 
@@ -294,7 +295,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestanteComSaldo(199));
 
-        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L));
+        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Pontos insuficientes", erro.getMessage());
         verify(resgatadoRepository, never()).save(any());
         verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
@@ -308,7 +309,7 @@ class CupomServiceTest {
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(0);
 
-        assertEquals(0, service.resgatar(5L, 7L).saldo());
+        assertEquals(0, service.resgatar(5L, 7L, null).cupom().saldo());
     }
 
     @Test
@@ -316,7 +317,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(1)));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestanteComSaldo(0));
 
-        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L));
+        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Pontos insuficientes", erro.getMessage());
     }
 
@@ -328,7 +329,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupom));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestanteComSaldo(0));
 
-        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L));
+        var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
     }
 
@@ -337,7 +338,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(100)));
         when(pontuacaoService.travarGestante(7L)).thenThrow(new NaoEncontradoException("Gestante não encontrada"));
 
-        assertThrows(NaoEncontradoException.class, () -> service.resgatar(5L, 7L));
+        assertThrows(NaoEncontradoException.class, () -> service.resgatar(5L, 7L, null));
         verify(resgatadoRepository, never()).save(any());
     }
 
@@ -349,7 +350,7 @@ class CupomServiceTest {
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        service.resgatar(5L, 7L);
+        service.resgatar(5L, 7L, null);
 
         var ordem = inOrder(pontuacaoService, resgatadoRepository);
         ordem.verify(pontuacaoService).travarGestante(7L);
@@ -365,7 +366,7 @@ class CupomServiceTest {
 
         var codigos = new java.util.HashSet<String>();
         for (int i = 0; i < 200; i++) {
-            String codigo = service.resgatar(5L, 7L).codigo();
+            String codigo = service.resgatar(5L, 7L, null).cupom().codigo();
             assertEquals(8, codigo.length());
             assertTrue(codigo.chars().noneMatch(c -> "01OIL".indexOf(c) >= 0), codigo);
             codigos.add(codigo);
@@ -393,5 +394,74 @@ class CupomServiceTest {
 
         assertEquals(3, service.listarDisponiveis().size());
         verify(empresaRepository).findAllById(List.of(1L));
+    }
+
+    // ---- Idempotência: o duplo toque no app ----
+
+    private static final UUID CHAVE = UUID.fromString("3f1c9a52-7d0e-4b8a-9c61-2e5f4a7b8d90");
+
+    @Test
+    void chaveJaUsadaDevolveOResgateFeitoSemDebitarDeNovo() {
+        var gestante = gestanteComSaldo(300);
+        var feito = Campos.definir(new CupomResgatado(cupomDe(200), farmacia, gestante, "ABCD2345", CHAVE), "id", 9L);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.findByGestanteIdAndChaveIdempotencia(7L, CHAVE)).thenReturn(Optional.of(feito));
+
+        var resgate = service.resgatar(5L, 7L, CHAVE);
+
+        assertTrue(resgate.repetido());
+        assertEquals(9L, resgate.cupom().id());
+        assertEquals("ABCD2345", resgate.cupom().codigo());
+        assertEquals(200, resgate.cupom().pontosGastos());
+        // O saldo atual, que já tem o débito do primeiro toque
+        assertEquals(300, resgate.cupom().saldo());
+        verify(resgatadoRepository, never()).save(any());
+        verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
+    }
+
+    @Test
+    void chaveJaUsadaDevolveOResgateMesmoSemSaldoParaOutro() {
+        // O primeiro toque gastou tudo: o segundo não é um resgate novo, então não esbarra em "Pontos insuficientes"
+        var gestante = gestanteComSaldo(0);
+        var feito = Campos.definir(new CupomResgatado(cupomDe(200), farmacia, gestante, "ABCD2345", CHAVE), "id", 9L);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.findByGestanteIdAndChaveIdempotencia(7L, CHAVE)).thenReturn(Optional.of(feito));
+
+        assertEquals(0, service.resgatar(5L, 7L, CHAVE).cupom().saldo());
+    }
+
+    @Test
+    void chaveNovaResgataEGuardaAChave() {
+        var gestante = gestanteComSaldo(500);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.findByGestanteIdAndChaveIdempotencia(7L, CHAVE)).thenReturn(Optional.empty());
+        when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(300);
+
+        var resgate = service.resgatar(5L, 7L, CHAVE);
+
+        assertFalse(resgate.repetido());
+        assertEquals(300, resgate.cupom().saldo());
+        var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
+        verify(resgatadoRepository).save(salvo.capture());
+        assertEquals(CHAVE, salvo.getValue().getChaveIdempotencia());
+        // A busca pela chave só vale com a gestante travada: o segundo toque espera o primeiro gravar
+        var ordem = inOrder(pontuacaoService, resgatadoRepository);
+        ordem.verify(pontuacaoService).travarGestante(7L);
+        ordem.verify(resgatadoRepository).findByGestanteIdAndChaveIdempotencia(7L, CHAVE);
+        ordem.verify(resgatadoRepository).save(any());
+    }
+
+    @Test
+    void semChaveNaoProcuraResgateAnterior() {
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(100)));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestanteComSaldo(500));
+        when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertFalse(service.resgatar(5L, 7L, null).repetido());
+        verify(resgatadoRepository, never()).findByGestanteIdAndChaveIdempotencia(any(), any());
     }
 }

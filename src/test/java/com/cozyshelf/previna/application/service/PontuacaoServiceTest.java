@@ -140,7 +140,7 @@ class PontuacaoServiceTest {
         var fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
         var empresa = new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash");
         var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), empresa,
-                gestante, "ABCD2345");
+                gestante, "ABCD2345", null);
 
         assertEquals(300, service.debitarPontos(gestante, 200, resgatado));
 
@@ -161,7 +161,7 @@ class PontuacaoServiceTest {
         var fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
         var empresa = new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash");
         var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), empresa,
-                gestante, "ABCD2345");
+                gestante, "ABCD2345", null);
         when(gestanteRepository.debitarPontos(1L, 200)).thenReturn(0);
 
         var erro = assertThrows(ConflitoException.class, () -> service.debitarPontos(gestante, 200, resgatado));

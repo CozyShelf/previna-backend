@@ -28,6 +28,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -118,12 +120,28 @@ public class CupomService {
                 .toList();
     }
 
-    // Cupom, débito e saldo na mesma transação, com a gestante travada: dois resgates simultâneos não passam do saldo
+    // Resultado do resgate. repetido: a chave de idempotência já tinha sido usada, e o cupom é o do resgate feito antes
+    public record Resgate(CupomResgatadoResponse cupom, boolean repetido) {}
+
+    // Cupom, débito e saldo na mesma transação, com a gestante travada: dois resgates simultâneos não passam do saldo.
+    // chaveIdempotencia (opcional) identifica a confirmação no app: o duplo toque devolve o resgate já feito, sem
+    // debitar de novo. Sem chave (versões antigas do app), cada chamada é um resgate novo.
     @Transactional
-    public CupomResgatadoResponse resgatar(Long idCupom, Long idGestante) {
+    public Resgate resgatar(Long idCupom, Long idGestante, UUID chaveIdempotencia) {
         Cupom cupom = cupomRepository.findById(idCupom)
                 .orElseThrow(() -> new NaoEncontradoException("Cupom não encontrado"));
         Gestante gestante = pontuacaoService.travarGestante(idGestante);
+
+        // Depois da trava: os dois toques se enfileiram nela, e o segundo já encontra o resgate do primeiro.
+        // Antes das regras: o cupom pode ter esgotado o saldo, e o toque repetido não é um resgate novo.
+        // O UNIQUE (gestante_id, chave_idempotencia) é a última barreira
+        if (chaveIdempotencia != null) {
+            Optional<CupomResgatado> feito = cupomResgatadoRepository
+                    .findByGestanteIdAndChaveIdempotencia(idGestante, chaveIdempotencia);
+            if (feito.isPresent()) {
+                return new Resgate(resposta(feito.get(), gestante.getSaldoPontos()), true);
+            }
+        }
 
         if (!cupom.disponivelEm(LocalDate.now())) {
             throw new ConflitoException("Cupom indisponível");
@@ -135,8 +153,13 @@ public class CupomService {
         // O cupom resgatado guarda uma cópia do cupom e da empresa: editar o cupom depois não muda este resgate
         EmpresaParceira empresa = empresaRepository.findById(cupom.getEmpresaId()).orElseThrow();
         CupomResgatado resgatado = cupomResgatadoRepository.save(
-                new CupomResgatado(cupom, empresa, gestante, gerarCodigoUnico()));
+                new CupomResgatado(cupom, empresa, gestante, gerarCodigoUnico(), chaveIdempotencia));
         int saldo = pontuacaoService.debitarPontos(gestante, resgatado.getPontosGastos(), resgatado);
+        return new Resgate(resposta(resgatado, saldo), false);
+    }
+
+    // saldo: o atual da gestante, e não o de quando o cupom foi resgatado
+    private static CupomResgatadoResponse resposta(CupomResgatado resgatado, int saldo) {
         return new CupomResgatadoResponse(resgatado.getId(), resgatado.getCodigo(), resgatado.getDescricao(),
                 resgatado.getEmpresaNome(), resgatado.getDataValidade(), resgatado.getStatus(),
                 resgatado.getDataResgate().atZone(ZoneId.systemDefault()).toInstant(), resgatado.getPontosGastos(),

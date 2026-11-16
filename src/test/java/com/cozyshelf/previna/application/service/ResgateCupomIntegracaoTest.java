@@ -30,6 +30,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -131,7 +132,7 @@ class ResgateCupomIntegracaoTest {
                 resultados.add(executor.submit((Callable<Boolean>) () -> {
                     largada.await();
                     try {
-                        cupomService.resgatar(idCupom, idGestante);
+                        cupomService.resgatar(idCupom, idGestante, null);
                         return true;
                     } catch (ConflitoException pontosInsuficientes) {
                         assertEquals("Pontos insuficientes", pontosInsuficientes.getMessage());
@@ -181,7 +182,7 @@ class ResgateCupomIntegracaoTest {
         doThrow(new IllegalStateException("falha simulada"))
                 .when(pontuacaoService).debitarPontos(any(), anyInt(), any());
 
-        assertThrows(IllegalStateException.class, () -> cupomService.resgatar(cupom.getId(), gestante.getId()));
+        assertThrows(IllegalStateException.class, () -> cupomService.resgatar(cupom.getId(), gestante.getId(), null));
         assertEquals(100, saldo(gestante));
         assertEquals(0, resgates(gestante));
         assertEquals(0, debitos(gestante));
@@ -192,7 +193,7 @@ class ResgateCupomIntegracaoTest {
         Gestante gestante = gestanteComSaldo(100);
         Cupom cupom = cupom(60, LocalDate.now().plusDays(5));
 
-        var resposta = cupomService.resgatar(cupom.getId(), gestante.getId());
+        var resposta = cupomService.resgatar(cupom.getId(), gestante.getId(), null).cupom();
 
         assertEquals(40, resposta.saldo());
         assertEquals(empresa.getRazaoSocial(), resposta.empresa());
@@ -209,7 +210,7 @@ class ResgateCupomIntegracaoTest {
     void codigoRepetidoEBarradoPeloBanco() {
         Gestante gestante = gestanteComSaldo(100);
         Cupom cupom = cupom(10, LocalDate.now().plusDays(5));
-        var primeiro = cupomService.resgatar(cupom.getId(), gestante.getId());
+        var primeiro = cupomService.resgatar(cupom.getId(), gestante.getId(), null).cupom();
 
         assertThrows(Exception.class, () -> jdbc.update(
                 "INSERT INTO cupom_resgatado (cupom_id, gestante_id, codigo, status, data_resgate)"
@@ -222,7 +223,7 @@ class ResgateCupomIntegracaoTest {
         // LazyInitializationException ao montar a resposta
         Gestante gestante = gestanteComSaldo(100);
         Cupom cupom = cupom(60, LocalDate.now().plusDays(5));
-        cupomService.resgatar(cupom.getId(), gestante.getId());
+        cupomService.resgatar(cupom.getId(), gestante.getId(), null);
 
         var extrato = pontuacaoService.gerarExtrato(gestante.getId(), new ExtratoRequest(TipoTransacao.DEBITO, null, null));
 
@@ -234,7 +235,7 @@ class ResgateCupomIntegracaoTest {
     void editarOCupomEOProdutoDepoisDoResgateNaoMudaOResgateNemOExtrato() {
         Gestante gestante = gestanteComSaldo(100);
         Cupom cupom = cupom(60, LocalDate.now().plusDays(5));
-        var resposta = cupomService.resgatar(cupom.getId(), gestante.getId());
+        var resposta = cupomService.resgatar(cupom.getId(), gestante.getId(), null).cupom();
         Produto body = produtoRepository.save(new Produto(empresa.getId(), "Body", null, Categoria.ROUPAS, null));
 
         // A empresa troca tudo no cupom e ainda renomeia o produto original
@@ -281,9 +282,113 @@ class ResgateCupomIntegracaoTest {
         Gestante gestante = gestanteComSaldo(100);
         Cupom vencido = cupom(10, LocalDate.now().minusDays(1));
 
-        var erro = assertThrows(ConflitoException.class, () -> cupomService.resgatar(vencido.getId(), gestante.getId()));
+        var erro = assertThrows(ConflitoException.class, () -> cupomService.resgatar(vencido.getId(), gestante.getId(), null));
         assertEquals("Cupom indisponível", erro.getMessage());
         assertEquals(100, saldo(gestante));
         assertEquals(0, resgates(gestante));
+    }
+
+    // ---- Idempotência: o duplo toque no app ----
+
+    // Dispara os resgates ao mesmo tempo, cada um com a sua chave, e devolve as respostas
+    private List<CupomService.Resgate> resgatarAoMesmoTempoComChaves(Long idCupom, Long idGestante, UUID... chaves)
+            throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(chaves.length);
+        CountDownLatch largada = new CountDownLatch(1);
+        try {
+            List<Future<CupomService.Resgate>> futuros = new ArrayList<>();
+            for (UUID chave : chaves) {
+                futuros.add(executor.submit(() -> {
+                    largada.await();
+                    return cupomService.resgatar(idCupom, idGestante, chave);
+                }));
+            }
+            largada.countDown();
+            List<CupomService.Resgate> resgates = new ArrayList<>();
+            for (Future<CupomService.Resgate> futuro : futuros) {
+                resgates.add(futuro.get());
+            }
+            return resgates;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void doisToquesSimultaneosComAMesmaChaveResgatamUmaVezSo() throws Exception {
+        Gestante gestante = gestanteComSaldo(100);
+        Cupom cupom = cupom(30, LocalDate.now().plusDays(5));
+        UUID chave = UUID.randomUUID();
+
+        var resgates = resgatarAoMesmoTempoComChaves(cupom.getId(), gestante.getId(), chave, chave);
+
+        assertEquals(1, resgates.stream().filter(CupomService.Resgate::repetido).count());
+        // Os dois recebem o mesmo cupom e o saldo com um débito só
+        assertEquals(resgates.get(0).cupom().id(), resgates.get(1).cupom().id());
+        assertEquals(resgates.get(0).cupom().codigo(), resgates.get(1).cupom().codigo());
+        assertEquals(70, resgates.get(0).cupom().saldo());
+        assertEquals(70, resgates.get(1).cupom().saldo());
+        assertEquals(70, saldo(gestante));
+        assertEquals(1, resgates(gestante));
+        assertEquals(1, debitos(gestante));
+    }
+
+    @Test
+    void repetirAChaveDepoisDeOutrosResgatesDevolveOSaldoAtual() {
+        Gestante gestante = gestanteComSaldo(100);
+        Cupom cupom = cupom(30, LocalDate.now().plusDays(5));
+        UUID chave = UUID.randomUUID();
+        var primeiro = cupomService.resgatar(cupom.getId(), gestante.getId(), chave);
+        cupomService.resgatar(cupom.getId(), gestante.getId(), UUID.randomUUID());
+
+        var repetido = cupomService.resgatar(cupom.getId(), gestante.getId(), chave);
+
+        assertTrue(repetido.repetido());
+        assertEquals(primeiro.cupom().id(), repetido.cupom().id());
+        assertEquals(40, repetido.cupom().saldo());
+        assertEquals(2, resgates(gestante));
+    }
+
+    @Test
+    void chavesDiferentesSaoResgatesDiferentes() throws Exception {
+        // Resgatar o mesmo cupom mais de uma vez é permitido: cada confirmação no app tem a sua chave
+        Gestante gestante = gestanteComSaldo(100);
+        Cupom cupom = cupom(30, LocalDate.now().plusDays(5));
+
+        var resgates = resgatarAoMesmoTempoComChaves(cupom.getId(), gestante.getId(),
+                UUID.randomUUID(), UUID.randomUUID());
+
+        assertTrue(resgates.stream().noneMatch(CupomService.Resgate::repetido));
+        assertNotEquals(resgates.get(0).cupom().id(), resgates.get(1).cupom().id());
+        assertEquals(40, saldo(gestante));
+        assertEquals(2, resgates(gestante));
+        assertEquals(2, debitos(gestante));
+    }
+
+    @Test
+    void mesmaChaveDeOutraGestanteNaoDevolveOResgateDela() {
+        Gestante maria = gestanteComSaldo(100);
+        Gestante joana = gestanteComSaldo(100);
+        Cupom cupom = cupom(30, LocalDate.now().plusDays(5));
+        UUID chave = UUID.randomUUID();
+        var daMaria = cupomService.resgatar(cupom.getId(), maria.getId(), chave);
+
+        var daJoana = cupomService.resgatar(cupom.getId(), joana.getId(), chave);
+
+        assertFalse(daJoana.repetido());
+        assertNotEquals(daMaria.cupom().id(), daJoana.cupom().id());
+        assertEquals(70, saldo(joana));
+    }
+
+    @Test
+    void chaveRepetidaEBarradaPeloBanco() {
+        Gestante gestante = gestanteComSaldo(100);
+        Cupom cupom = cupom(10, LocalDate.now().plusDays(5));
+        UUID chave = UUID.randomUUID();
+        cupomService.resgatar(cupom.getId(), gestante.getId(), chave);
+
+        assertThrows(Exception.class, () -> jdbc.update(
+                "INSERT INTO cupom_resgatado (cupom_id, gestante_id, codigo, status, data_resgate, chave_idempotencia)"
+                        + " VALUES (?, ?, 'ZZZZ2345', 'ATIVO', now(), ?)", cupom.getId(), gestante.getId(), chave));
     }
 }
