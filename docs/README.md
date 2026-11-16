@@ -9,7 +9,7 @@ Cada diagrama tem a sua pasta, com o fonte (`.puml`, PlantUML) e a imagem (`.png
 
 Para gerar a imagem de novo depois de editar o fonte: `java -jar plantuml.jar -tpng <pasta>/<nome>.puml` (PlantUML 1.2024.7). O modelo lógico e os casos de uso usam o layout `smetana`, que não precisa do Graphviz.
 
-No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); as demais seguem as migrações V1 a V16.
+No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); as demais seguem as migrações V1 a V17.
 
 ## Decisões
 
@@ -58,4 +58,11 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   ter registrado o desfecho. `/gestantes/agendamentos?pendentes=true|false` separa a tela inicial do histórico do app.
 - **Cálculo dos pontos:** `arredondar(tipo_atendimento.pontos_base × dados_socioeconomicos.fator_ponderacao)`, com o fator gravado em `transacao_pontos.fator_aplicado`. O fator é neutro (1,00) até a regra de ponderação ser definida.
 - **Promoção e cupom:** a promoção vale para todos os produtos da empresa em uma categoria (fraldas, roupas ou remédios); o cupom vale para um produto específico, sem quantidade, e a empresa o ativa ou desativa.
+- **Catálogo de ofertas da gestante:** `/ofertas` lista as empresas, e cada uma os produtos com oferta: cupom válido
+  (ativo e dentro da validade) ou promoção vigente da mesma empresa na categoria do produto. Produto sem categoria
+  pode ter cupom, mas nunca promoção. Os filtros (busca, categoria, empresa, tipo, "cabe no meu saldo") ficam no
+  servidor porque o app pagina com rolagem infinita. Produto sem oferta responde como inexistente (404).
+- **Cópia do cupom no resgate:** `cupom_resgatado` guarda produto, empresa, desconto, validade e pontos do momento do
+  resgate (`V17`). A resposta do resgate e o extrato vêm dessa cópia: editar o cupom ou renomear o produto depois não
+  muda o que a gestante resgatou. `cupom_id` continua, para saber de onde o resgate veio.
 - **Validação de cupom:** cupom de outra empresa tem a mesma resposta do código inexistente (404); o cupom já resgatado continua válido se a empresa desativar o cupom depois.

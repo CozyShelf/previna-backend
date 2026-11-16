@@ -74,7 +74,7 @@ src/main/java/com/cozyshelf/previna/
     config/         Spring Security e Spring MVC
     email/          envio de e-mails
 src/main/resources/
-  db/migration/     migrações Flyway (V1 a V16)
+  db/migration/     migrações Flyway (V1 a V17)
   db/seed/          dados de exemplo, só no profile dev
 docs/               modelo lógico, casos de uso e diagramas de sequência (ver docs/README.md)
 ```
@@ -92,9 +92,9 @@ mvn test
 - **Controller** (`@WebMvcTest`, com a `SecurityConfig` e o filtro JWT de verdade). `MatrizAutorizacaoTest` confere
   cada rota contra os perfis possíveis (anônimo, administrador, médico, gestante, empresa e os dois primeiros acessos)
   e falha se aparecer rota nova fora da matriz: ao criar um endpoint, adicione uma linha em `ROTAS`.
-- **Integração com PostgreSQL** (`ResgateCupomIntegracaoTest`, `FiltrosIntegracaoTest`): a trava contra resgates
-  simultâneos (`SELECT ... FOR UPDATE`), o rollback, a consulta por validade e a busca sem acento só se provam no
-  banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
+- **Integração com PostgreSQL** (`ResgateCupomIntegracaoTest`, `FiltrosIntegracaoTest`, `OfertaIntegracaoTest`): a
+  trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), o rollback, a consulta por validade, a busca sem
+  acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
   aplicadas nele); sem ela, são pulados.
 
 No ambiente do `previna-development`:
