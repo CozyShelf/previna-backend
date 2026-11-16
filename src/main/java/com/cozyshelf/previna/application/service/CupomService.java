@@ -132,13 +132,14 @@ public class CupomService {
             throw new ConflitoException("Pontos insuficientes");
         }
 
-        CupomResgatado resgatado = cupomResgatadoRepository.save(new CupomResgatado(cupom, gestante, gerarCodigoUnico()));
-        int saldo = pontuacaoService.debitarPontos(gestante, cupom.getPontosNecessarios(), resgatado);
-        String empresa = empresaRepository.findById(cupom.getEmpresaId()).map(EmpresaParceira::getRazaoSocial)
-                .orElse(null);
-        return new CupomResgatadoResponse(resgatado.getId(), resgatado.getCodigo(), cupom.getDescricao(), empresa,
-                cupom.getDataValidade(), resgatado.getStatus(),
-                resgatado.getDataResgate().atZone(ZoneId.systemDefault()).toInstant(), cupom.getPontosNecessarios(),
+        // O cupom resgatado guarda uma cópia do cupom e da empresa: editar o cupom depois não muda este resgate
+        EmpresaParceira empresa = empresaRepository.findById(cupom.getEmpresaId()).orElseThrow();
+        CupomResgatado resgatado = cupomResgatadoRepository.save(
+                new CupomResgatado(cupom, empresa, gestante, gerarCodigoUnico()));
+        int saldo = pontuacaoService.debitarPontos(gestante, resgatado.getPontosGastos(), resgatado);
+        return new CupomResgatadoResponse(resgatado.getId(), resgatado.getCodigo(), resgatado.getDescricao(),
+                resgatado.getEmpresaNome(), resgatado.getDataValidade(), resgatado.getStatus(),
+                resgatado.getDataResgate().atZone(ZoneId.systemDefault()).toInstant(), resgatado.getPontosGastos(),
                 saldo);
     }
 

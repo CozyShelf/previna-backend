@@ -1,5 +1,6 @@
 package com.cozyshelf.previna.application.service;
 
+import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.ExtratoRequest;
 import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.exception.ConflitoException;
@@ -217,7 +218,7 @@ class ResgateCupomIntegracaoTest {
 
     @Test
     void extratoDescreveODebitoComOCupomForaDaTransacao() {
-        // open-in-view está desligado: se o EntityGraph não trouxer o cupom e o produto, a descrição estoura
+        // open-in-view está desligado: se o EntityGraph não trouxer o cupom resgatado, a descrição estoura
         // LazyInitializationException ao montar a resposta
         Gestante gestante = gestanteComSaldo(100);
         Cupom cupom = cupom(60, LocalDate.now().plusDays(5));
@@ -227,6 +228,32 @@ class ResgateCupomIntegracaoTest {
 
         assertEquals(60, extrato.totalGasto());
         assertEquals("Cupom: 10% de desconto em Fralda RN", extrato.historico().getFirst().descricao());
+    }
+
+    @Test
+    void editarOCupomEOProdutoDepoisDoResgateNaoMudaOResgateNemOExtrato() {
+        Gestante gestante = gestanteComSaldo(100);
+        Cupom cupom = cupom(60, LocalDate.now().plusDays(5));
+        var resposta = cupomService.resgatar(cupom.getId(), gestante.getId());
+        Produto body = produtoRepository.save(new Produto(empresa.getId(), "Body", null, Categoria.ROUPAS, null));
+
+        // A empresa troca tudo no cupom e ainda renomeia o produto original
+        cupomService.atualizar(empresa.getId(), cupom.getId(),
+                new CupomRequest(body.getId(), new BigDecimal("50"), LocalDate.now().plusDays(90), 10));
+        jdbc.update("UPDATE produto SET nome = 'Fralda P' WHERE id = ?", fralda.getId());
+
+        var linha = jdbc.queryForMap("SELECT produto_id, produto_nome, empresa_id, empresa_nome, desconto,"
+                + " data_validade, pontos_gastos FROM cupom_resgatado WHERE id = ?", resposta.id());
+        assertEquals(fralda.getId(), linha.get("produto_id"));
+        assertEquals("Fralda RN", linha.get("produto_nome"));
+        assertEquals(empresa.getId(), linha.get("empresa_id"));
+        assertEquals(empresa.getRazaoSocial(), linha.get("empresa_nome"));
+        assertEquals(0, new BigDecimal("10").compareTo((BigDecimal) linha.get("desconto")));
+        assertEquals(java.sql.Date.valueOf(LocalDate.now().plusDays(5)), linha.get("data_validade"));
+        assertEquals(60, linha.get("pontos_gastos"));
+        var extrato = pontuacaoService.gerarExtrato(gestante.getId(), new ExtratoRequest(TipoTransacao.DEBITO, null, null));
+        assertEquals("Cupom: 10% de desconto em Fralda RN", extrato.historico().getFirst().descricao());
+        assertEquals(60, extrato.totalGasto());
     }
 
     @Test

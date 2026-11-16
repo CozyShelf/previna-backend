@@ -96,8 +96,11 @@ class ResgateCupomControllerTest {
     @Test
     void tokenAdulteradoNaoAutentica() throws Exception {
         String valido = jwtService.gerarToken(gestante(7L, true));
-        // Troca o último caractere da assinatura
-        String adulterado = valido.substring(0, valido.length() - 1) + (valido.endsWith("A") ? "B" : "A");
+        // Troca um caractere do meio da assinatura. O último não serve: dos 6 bits dele, só 4 entram nos 32 bytes do
+        // HMAC-SHA256, e trocar A por B mexe só nos que sobram (a assinatura continuava a mesma e o teste falhava às vezes)
+        int posicao = valido.length() - 10;
+        String adulterado = valido.substring(0, posicao) + (valido.charAt(posicao) == 'A' ? 'B' : 'A')
+                + valido.substring(posicao + 1);
 
         mvc.perform(post("/cupons/1/resgatar").header("Authorization", "Bearer " + adulterado))
                 .andExpect(status().isUnauthorized());

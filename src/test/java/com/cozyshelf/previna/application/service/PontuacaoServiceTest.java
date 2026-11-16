@@ -9,6 +9,7 @@ import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.Cupom;
 import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.DadosSocioeconomicos;
+import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
@@ -133,8 +134,9 @@ class PontuacaoServiceTest {
     void debitaDoSaldoERegistraODebitoApontandoParaOCupomResgatado() {
         Campos.definir(gestante, "saldoPontos", 500);
         var fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
-        var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), gestante,
-                "ABCD2345");
+        var empresa = new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash");
+        var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), empresa,
+                gestante, "ABCD2345");
 
         assertEquals(300, service.debitarPontos(gestante, 200, resgatado));
 

@@ -44,7 +44,7 @@ public class CupomController {
     }
 
     @PostMapping
-    @Operation(summary = "Cadastra um cupom para uma categoria (fraldas, roupas, remédios) ou um produto da empresa autenticada")
+    @Operation(summary = "Cadastra um cupom para um produto da empresa autenticada")
     public ResponseEntity<CupomResponse> cadastrar(
             @RequestBody @Valid CupomRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado empresa) {

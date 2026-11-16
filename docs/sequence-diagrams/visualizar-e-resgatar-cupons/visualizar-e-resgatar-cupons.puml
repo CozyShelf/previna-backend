@@ -4,7 +4,9 @@ autonumber
 
 actor "Gestante" as Gestante
 boundary "App Previna" as App
-control "CupomController" as Controller
+control "OfertaController" as Ofertas
+participant "OfertaService" as Catalogo
+control "ResgateCupomController" as Controller
 participant "CupomService" as Service
 participant "PontuacaoService" as Pontuacao
 database "Banco de Dados" as BD
@@ -14,14 +16,30 @@ note over Gestante, Controller
     A gestante vem do token, não do caminho.
 end note
 
-Gestante -> App : Acessa "Cupons Disponíveis"
-App -> Controller : GET /cupons/disponiveis
-Controller -> Service : listarCuponsDisponiveis()
-Service -> BD : buscarCupons(ativos, dentro da validade)
-BD --> Service : lista de cupons
-Service --> Controller : lista de cupons
-Controller --> App : 200 OK
-App --> Gestante : Exibe cupons (empresa, produto, desconto, custo em pontos)
+Gestante -> App : Acessa "Cupons" (filtros opcionais: busca, categoria, empresa, tipo, cabe no saldo)
+App -> Ofertas : GET /ofertas?filtros&pagina
+Ofertas -> Catalogo : listarEmpresas(idGestante do token, filtros)
+Catalogo -> BD : empresas com produto em oferta (cupom válido ou promoção vigente), por nome
+BD --> Catalogo : página de empresas
+Catalogo -> BD : até 10 produtos com oferta de cada empresa + total; cupons e promoções desses produtos
+BD --> Catalogo : produtos, cupons e promoções
+Catalogo --> Ofertas : empresas com produtos e selos
+Ofertas --> App : 200 OK
+App --> Gestante : Exibe empresas com carrossel de produtos (selos "Cupom" e "Promoção X%")
+
+opt "Ver todos" de uma empresa
+    App -> Ofertas : GET /ofertas/empresas/{empresaId}/produtos?filtros&pagina
+    Ofertas --> App : 200 OK (ou 404 se a empresa não existe)
+end
+
+Gestante -> App : Abre um produto
+App -> Ofertas : GET /ofertas/produtos/{id}
+Ofertas -> Catalogo : detalhar(idProduto)
+Catalogo -> BD : produto, cupons válidos (mais baratos primeiro) e promoções vigentes da categoria
+BD --> Catalogo : dados
+Catalogo --> Ofertas : produto com cupons e promoções
+Ofertas --> App : 200 OK (ou 404 se o produto não existe ou não tem oferta)
+App --> Gestante : Exibe cupons (desconto, pontos, validade) e promoções
 
 Gestante -> App : Seleciona cupom e solicita resgate
 App --> Gestante : Solicita confirmação
@@ -47,7 +65,7 @@ else saldo menor que os pontos necessários
     App --> Gestante : Exibe "Pontos insuficientes"
 else resgate válido
     Service -> Service : gerarCodigoUnico()
-    Service -> BD : salvarCupomResgatado(idGestante, idCupom, codigo, status = ATIVO)
+    Service -> BD : salvarCupomResgatado(idGestante, idCupom, codigo, status = ATIVO,\n cópia de produto, empresa, desconto, validade e pontos)
     BD --> Service : cupom resgatado
     Service -> Pontuacao : debitarPontos(idGestante, pontosNecessarios, idCupomResgatado)
     Pontuacao -> BD : registrarTransacao(tipo = DEBITO, pontos, idCupomResgatado)
@@ -61,6 +79,7 @@ end
 note over Gestante, BD
     Débito, transação e cupom resgatado na mesma transação, com a gestante bloqueada (SELECT ... FOR UPDATE):
     dois resgates simultâneos não passam do saldo. O cupom não tem quantidade: a empresa o tira do ar desativando-o.
+    O cupom resgatado guarda uma cópia do cupom: editá-lo depois não muda o resgate nem o extrato.
 end note
 
 @enduml

@@ -172,6 +172,14 @@ entity cupom_resgatado {
   * status : ATIVO | UTILIZADO | EXPIRADO
   * data_resgate : timestamp
   data_uso : timestamp
+  .. cópia do cupom no resgate ..
+  * produto_id : bigint <<FK>>
+  * produto_nome : varchar
+  * empresa_id : bigint <<FK>>
+  * empresa_nome : varchar
+  * desconto : decimal
+  * data_validade : date
+  * pontos_gastos : int
 }
 
 entity conteudo_informativo {
@@ -226,6 +234,8 @@ produto ||--o| imagem_produto
 produto ||--o{ cupom
 
 cupom ||--o{ cupom_resgatado
+produto ||--o{ cupom_resgatado
+empresa_parceira ||--o{ cupom_resgatado
 gestante ||--o{ cupom_resgatado
 
 gestante ||--o{ agendamento

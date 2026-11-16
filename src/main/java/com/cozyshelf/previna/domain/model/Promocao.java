@@ -51,6 +51,16 @@ public class Promocao {
         return id;
     }
 
+    public Long getEmpresaId() {
+        return empresaId;
+    }
+
+    // Vale para o produto se for da mesma empresa e da mesma categoria; produto sem categoria nunca tem promoção
+    public boolean valePara(Produto produto) {
+        return produto.getCategoria() != null && produto.getCategoria() == categoria
+                && produto.getEmpresaId().equals(empresaId);
+    }
+
     public String getTitulo() {
         return titulo;
     }

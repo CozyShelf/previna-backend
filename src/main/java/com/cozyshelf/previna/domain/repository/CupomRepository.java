@@ -8,8 +8,11 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,4 +28,8 @@ public interface CupomRepository extends JpaRepository<Cupom, Long>, JpaSpecific
     // shortcut: a lista vai inteira, sem paginação (dezenas de cupons); paginar se passar de centenas
     @EntityGraph(attributePaths = "produto")
     List<Cupom> findByAtivoTrueAndDataValidadeGreaterThanEqual(LocalDate dia, Sort ordem);
+
+    // Cupons válidos (ativos e dentro da validade) dos produtos do catálogo de ofertas
+    @Query("select c from Cupom c where c.produto.id in :produtos and c.ativo = true and c.dataValidade >= :dia")
+    List<Cupom> validos(@Param("produtos") Collection<Long> produtos, @Param("dia") LocalDate dia, Sort ordem);
 }

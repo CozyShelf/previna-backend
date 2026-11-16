@@ -13,10 +13,12 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
+import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.ProdutoRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Sort;
@@ -47,6 +49,12 @@ class CupomServiceTest {
 
     private final EmpresaParceira farmacia = Campos.definir(
             new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash"), "id", 1L);
+
+    // O resgate copia o nome da empresa para o cupom resgatado
+    @BeforeEach
+    void empresaDoCupom() {
+        when(empresaRepository.findById(1L)).thenReturn(Optional.of(farmacia));
+    }
 
     private Gestante gestanteComSaldo(int saldo) {
         var medico = new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false);
@@ -170,7 +178,6 @@ class CupomServiceTest {
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(300);
-        when(empresaRepository.findById(1L)).thenReturn(Optional.of(farmacia));
 
         var resposta = service.resgatar(5L, 7L);
 
@@ -184,6 +191,54 @@ class CupomServiceTest {
         assertEquals(200, resposta.pontosGastos());
         assertEquals("Farmácia Vida", resposta.empresa());
         verify(pontuacaoService).debitarPontos(gestante, 200, salvo.getValue());
+    }
+
+    @Test
+    void resgateGuardaACopiaDoCupomEDaEmpresa() {
+        var cupom = Campos.definir(cupomDe(200), "id", 5L);
+        Campos.definir(fralda, "id", 10L);
+        var gestante = gestanteComSaldo(500);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupom));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var resposta = service.resgatar(5L, 7L);
+
+        var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
+        verify(resgatadoRepository).save(salvo.capture());
+        var copia = salvo.getValue();
+        assertEquals(10L, copia.getProdutoId());
+        assertEquals("Fralda RN", copia.getProdutoNome());
+        assertEquals(1L, copia.getEmpresaId());
+        assertEquals("Farmácia Vida", copia.getEmpresaNome());
+        assertEquals(BigDecimal.TEN, copia.getDesconto());
+        assertEquals(VALIDADE, copia.getDataValidade());
+        assertEquals(200, copia.getPontosGastos());
+        assertEquals("10% de desconto em Fralda RN", resposta.descricao());
+        assertEquals(VALIDADE, resposta.dataValidade());
+    }
+
+    @Test
+    void editarOCupomOuOProdutoDepoisNaoMudaOResgate() {
+        var gestante = gestanteComSaldo(500);
+        var cupom = cupomDe(200);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupom));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        service.resgatar(5L, 7L);
+        var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
+        verify(resgatadoRepository).save(salvo.capture());
+
+        cupom.atualizar(new Produto(1L, "Body", null, Categoria.ROUPAS, null), new BigDecimal("50"),
+                VALIDADE.plusDays(90), 999);
+        fralda.atualizar("Fralda P", null, Categoria.FRALDAS, null);
+
+        var resgatado = salvo.getValue();
+        assertEquals("10% de desconto em Fralda RN", resgatado.getDescricao());
+        assertEquals(VALIDADE, resgatado.getDataValidade());
+        assertEquals(200, resgatado.getPontosGastos());
+        assertEquals("Cupom: 10% de desconto em Fralda RN",
+                new TransacaoPontos(gestante, resgatado, 200).getDescricao());
     }
 
     @Test
