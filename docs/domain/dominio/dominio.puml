@@ -114,6 +114,7 @@ entity promocao {
   * data_inicio : date
   * data_fim : date
   * categoria : FRALDAS | ROUPAS | REMEDIOS
+  * ativo : boolean
 }
 
 entity cupom {
@@ -264,6 +265,7 @@ end note
 note bottom of promocao
   Sem ligação direta com produto: a promoção vale
   para todos os produtos da empresa com a mesma categoria.
+  É informativa (sem pontos nem código); desativada sai do catálogo.
 end note
 
 @enduml

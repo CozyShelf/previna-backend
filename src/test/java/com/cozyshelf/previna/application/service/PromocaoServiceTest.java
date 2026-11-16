@@ -37,6 +37,7 @@ class PromocaoServiceTest {
         verify(promocaoRepository).save(salva.capture());
         assertEquals(Categoria.FRALDAS, salva.getValue().getCategoria());
         assertEquals(Categoria.FRALDAS, resposta.categoria());
+        assertTrue(resposta.ativo());
     }
 
     @Test
@@ -74,6 +75,27 @@ class PromocaoServiceTest {
 
         assertThrows(NaoEncontradoException.class, () -> service.atualizar(2L, 5L, dados(HOJE, HOJE)));
         assertThrows(NaoEncontradoException.class, () -> service.buscar(2L, 5L));
+        assertThrows(NaoEncontradoException.class, () -> service.alterarAtivo(2L, 5L, false));
+    }
+
+    @Test
+    void desativaEReativaAPromocaoDaEmpresa() {
+        var promocao = new Promocao(1L, "Semana do bebê", null, BigDecimal.TEN, HOJE, HOJE, Categoria.ROUPAS);
+        when(promocaoRepository.findByIdAndEmpresaId(5L, 1L)).thenReturn(Optional.of(promocao));
+
+        assertFalse(service.alterarAtivo(1L, 5L, false).ativo());
+        assertFalse(promocao.isAtivo());
+        assertTrue(service.alterarAtivo(1L, 5L, true).ativo());
+        assertTrue(promocao.isAtivo());
+    }
+
+    @Test
+    void atualizarNaoMudaASituacao() {
+        var promocao = new Promocao(1L, "Antiga", null, BigDecimal.TEN, HOJE, HOJE, Categoria.ROUPAS);
+        promocao.alterarAtivo(false);
+        when(promocaoRepository.findByIdAndEmpresaId(5L, 1L)).thenReturn(Optional.of(promocao));
+
+        assertFalse(service.atualizar(1L, 5L, dados(HOJE, HOJE.plusDays(7))).ativo());
     }
 
     @Test

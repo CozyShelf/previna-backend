@@ -44,13 +44,20 @@ public class PromocaoService {
         return resposta(encontrar(idEmpresa, idPromocao));
     }
 
-    // Troca todos os dados
+    // Troca todos os dados; a situação (ativo) continua a mesma
     @Transactional
     public PromocaoResponse atualizar(Long idEmpresa, Long idPromocao, PromocaoRequest dados) {
         validarPeriodo(dados);
         Promocao promocao = encontrar(idEmpresa, idPromocao);
         promocao.atualizar(dados.titulo(), dados.descricao(), dados.desconto(), dados.dataInicio(), dados.dataFim(),
                 dados.categoria());
+        return resposta(promocao);
+    }
+
+    @Transactional
+    public PromocaoResponse alterarAtivo(Long idEmpresa, Long idPromocao, boolean ativo) {
+        Promocao promocao = encontrar(idEmpresa, idPromocao);
+        promocao.alterarAtivo(ativo);
         return resposta(promocao);
     }
 
@@ -68,6 +75,6 @@ public class PromocaoService {
 
     private static PromocaoResponse resposta(Promocao promocao) {
         return new PromocaoResponse(promocao.getId(), promocao.getTitulo(), promocao.getDescricao(),
-                promocao.getDesconto(), promocao.getDataInicio(), promocao.getDataFim(), promocao.getCategoria());
+                promocao.getDesconto(), promocao.getDataInicio(), promocao.getDataFim(), promocao.getCategoria(), promocao.isAtivo());
     }
 }
