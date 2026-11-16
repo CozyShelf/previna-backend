@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.response.AtividadePontuadaResponse;
 import com.cozyshelf.previna.application.dto.response.ExtratoResponse;
 import com.cozyshelf.previna.application.dto.response.PontuacaoResponse;
 import com.cozyshelf.previna.application.dto.response.TransacaoResponse;
+import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.CupomResgatado;
@@ -69,6 +70,9 @@ public class PontuacaoService {
 
         // fator_aplicado guarda o fator usado, para o extrato continuar explicável se a regra mudar
         transacaoRepository.save(new TransacaoPontos(gestante, agendamento, TipoTransacao.CREDITO, pontos, fator));
+        // A soma é feita no banco (a entidade não grava o saldo); com a linha travada, o saldo em memória lido no
+        // refresh mais os pontos é o mesmo que ficou gravado
+        gestanteRepository.creditarPontos(gestante.getId(), pontos);
         gestante.creditarPontos(pontos);
         return pontos;
     }
@@ -85,6 +89,11 @@ public class PontuacaoService {
     // Sem @Transactional próprio, como o crédito: cupom resgatado, transação e saldo são gravados juntos.
     public int debitarPontos(Gestante gestante, int pontos, CupomResgatado cupomResgatado) {
         transacaoRepository.save(new TransacaoPontos(gestante, cupomResgatado, pontos));
+        // O WHERE confere o saldo de novo no banco: com a trava não deveria faltar, mas um débito nunca passa do saldo.
+        // A exceção desfaz a transação inteira, cupom resgatado incluído.
+        if (gestanteRepository.debitarPontos(gestante.getId(), pontos) == 0) {
+            throw new ConflitoException("Pontos insuficientes");
+        }
         gestante.debitarPontos(pontos);
         return gestante.getSaldoPontos();
     }
