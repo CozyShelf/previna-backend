@@ -472,4 +472,63 @@ class CondicoesDeCorridaIntegracaoTest {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM conteudo_informativo WHERE id = ?",
                 Integer.class, conteudo.getId()));
     }
+
+    // ---- Confirmação de agendamentos (já protegida: trava do agendamento e da gestante) ----
+
+    private int creditos(Agendamento agendamento) {
+        return jdbc.queryForObject("SELECT count(*) FROM transacao_pontos WHERE agendamento_id = ?", Integer.class,
+                agendamento.getId());
+    }
+
+    @Test
+    void confirmarERegistrarNaoComparecimentoAoMesmoTempoTemUmDesfechoSo() throws Exception {
+        // Algumas rodadas: a ordem de quem pega a trava primeiro varia
+        for (int rodada = 0; rodada < 5; rodada++) {
+            Gestante gestante = gestante();
+            Agendamento agendamento = agendamentoDeHoje(gestante, 40);
+
+            List<Future<Object>> futuros = aoMesmoTempo(List.of(
+                    () -> agendamentoService.confirmar(agendamento.getId(), medico.getId()),
+                    () -> agendamentoService.registrarNaoComparecimento(agendamento.getId(), medico.getId())));
+            String confirmacao = desfecho(futuros.get(0));
+            String naoComparecimento = desfecho(futuros.get(1));
+
+            assertTrue(confirmacao == null ^ naoComparecimento == null,
+                    "esperava um desfecho só: " + confirmacao + " / " + naoComparecimento);
+            assertEquals("Este agendamento já foi resolvido",
+                    confirmacao == null ? naoComparecimento : confirmacao);
+            String status = jdbc.queryForObject("SELECT status FROM agendamento WHERE id = ?", String.class,
+                    agendamento.getId());
+            if (confirmacao == null) {
+                assertEquals("REALIZADO", status);
+                assertEquals(1, creditos(agendamento));
+                assertEquals(40, saldo(gestante));
+            } else {
+                // Não comparecimento com pontos creditados era o estrago de antes da trava
+                assertEquals("NAO_COMPARECEU", status);
+                assertEquals(0, creditos(agendamento));
+                assertEquals(0, saldo(gestante));
+            }
+        }
+    }
+
+    @Test
+    void duasConfirmacoesSimultaneasDaMesmaGestanteSomamAsDuas() throws Exception {
+        Gestante gestante = gestante();
+        Agendamento exame = agendamentoDeHoje(gestante, 30);
+        Agendamento consulta = agendamentoDeHoje(gestante, 45);
+
+        List<Future<ConfirmacaoResponse>> futuros = aoMesmoTempo(List.of(
+                () -> agendamentoService.confirmar(exame.getId(), medico.getId()),
+                () -> agendamentoService.confirmar(consulta.getId(), medico.getId())));
+        int saldoDaPrimeira = futuros.get(0).get(ESPERA_SEGUNDOS, TimeUnit.SECONDS).saldoPontos();
+        int saldoDaSegunda = futuros.get(1).get(ESPERA_SEGUNDOS, TimeUnit.SECONDS).saldoPontos();
+
+        assertEquals(75, saldo(gestante));
+        assertEquals(1, creditos(exame));
+        assertEquals(1, creditos(consulta));
+        // Cada resposta mostra o saldo depois do próprio crédito: a que comitou por último vê a soma
+        assertEquals(75, Math.max(saldoDaPrimeira, saldoDaSegunda));
+        assertTrue(Math.min(saldoDaPrimeira, saldoDaSegunda) == 30 || Math.min(saldoDaPrimeira, saldoDaSegunda) == 45);
+    }
 }
