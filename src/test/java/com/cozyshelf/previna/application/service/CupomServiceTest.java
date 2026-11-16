@@ -108,7 +108,7 @@ class CupomServiceTest {
     @Test
     void desativaEReativaCupomDaEmpresa() {
         var cupom = new Cupom(1L, fralda, BigDecimal.TEN, VALIDADE, 200);
-        when(cupomRepository.findByIdAndEmpresaId(5L, 1L)).thenReturn(Optional.of(cupom));
+        when(cupomRepository.findByIdAndEmpresaIdParaAtualizar(5L, 1L)).thenReturn(Optional.of(cupom));
 
         assertFalse(service.alterarAtivo(1L, 5L, false).ativo());
         assertTrue(service.alterarAtivo(1L, 5L, true).ativo());
@@ -119,7 +119,7 @@ class CupomServiceTest {
         var body = new Produto(1L, "Body", null, Categoria.ROUPAS, null);
         var cupom = new Cupom(1L, fralda, BigDecimal.TEN, VALIDADE, 200);
         cupom.alterarAtivo(false);
-        when(cupomRepository.findByIdAndEmpresaId(5L, 1L)).thenReturn(Optional.of(cupom));
+        when(cupomRepository.findByIdAndEmpresaIdParaAtualizar(5L, 1L)).thenReturn(Optional.of(cupom));
         when(produtoRepository.findByIdAndEmpresaId(11L, 1L)).thenReturn(Optional.of(body));
 
         var resposta = service.atualizar(1L, 5L, dados(11L, "20"));
@@ -132,7 +132,7 @@ class CupomServiceTest {
     @Test
     void naoAtualizaParaProdutoDeOutraEmpresa() {
         var cupom = new Cupom(1L, fralda, BigDecimal.TEN, VALIDADE, 200);
-        when(cupomRepository.findByIdAndEmpresaId(5L, 1L)).thenReturn(Optional.of(cupom));
+        when(cupomRepository.findByIdAndEmpresaIdParaAtualizar(5L, 1L)).thenReturn(Optional.of(cupom));
         when(produtoRepository.findByIdAndEmpresaId(99L, 1L)).thenReturn(Optional.empty());
 
         assertThrows(DadosInvalidosException.class, () -> service.atualizar(1L, 5L, dados(99L, "20")));
@@ -142,7 +142,7 @@ class CupomServiceTest {
 
     @Test
     void naoAtualizaNemMostraCupomDeOutraEmpresa() {
-        when(cupomRepository.findByIdAndEmpresaId(5L, 2L)).thenReturn(Optional.empty());
+        when(cupomRepository.findByIdAndEmpresaIdParaAtualizar(5L, 2L)).thenReturn(Optional.empty());
 
         assertThrows(NaoEncontradoException.class, () -> service.atualizar(2L, 5L, dados(10L, "20")));
         assertThrows(NaoEncontradoException.class, () -> service.buscar(2L, 5L));
@@ -150,7 +150,7 @@ class CupomServiceTest {
 
     @Test
     void naoAlteraCupomDeOutraEmpresa() {
-        when(cupomRepository.findByIdAndEmpresaId(5L, 2L)).thenReturn(Optional.empty());
+        when(cupomRepository.findByIdAndEmpresaIdParaAtualizar(5L, 2L)).thenReturn(Optional.empty());
 
         assertThrows(NaoEncontradoException.class, () -> service.alterarAtivo(2L, 5L, false));
     }

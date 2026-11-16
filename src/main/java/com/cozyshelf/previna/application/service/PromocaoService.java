@@ -48,7 +48,7 @@ public class PromocaoService {
     @Transactional
     public PromocaoResponse atualizar(Long idEmpresa, Long idPromocao, PromocaoRequest dados) {
         validarPeriodo(dados);
-        Promocao promocao = encontrar(idEmpresa, idPromocao);
+        Promocao promocao = encontrarParaAtualizar(idEmpresa, idPromocao);
         promocao.atualizar(dados.titulo(), dados.descricao(), dados.desconto(), dados.dataInicio(), dados.dataFim(),
                 dados.categoria());
         return resposta(promocao);
@@ -56,7 +56,7 @@ public class PromocaoService {
 
     @Transactional
     public PromocaoResponse alterarAtivo(Long idEmpresa, Long idPromocao, boolean ativo) {
-        Promocao promocao = encontrar(idEmpresa, idPromocao);
+        Promocao promocao = encontrarParaAtualizar(idEmpresa, idPromocao);
         promocao.alterarAtivo(ativo);
         return resposta(promocao);
     }
@@ -64,6 +64,12 @@ public class PromocaoService {
     // Promoção de outra empresa responde como inexistente
     private Promocao encontrar(Long idEmpresa, Long idPromocao) {
         return promocaoRepository.findByIdAndEmpresaId(idPromocao, idEmpresa)
+                .orElseThrow(() -> new NaoEncontradoException("Promoção não encontrada"));
+    }
+
+    // Travada até o fim da transação: quem grava a promoção espera quem já a está alterando
+    private Promocao encontrarParaAtualizar(Long idEmpresa, Long idPromocao) {
+        return promocaoRepository.findByIdAndEmpresaIdParaAtualizar(idPromocao, idEmpresa)
                 .orElseThrow(() -> new NaoEncontradoException("Promoção não encontrada"));
     }
 

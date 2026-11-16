@@ -74,7 +74,7 @@ public class CupomService {
     // Troca todos os dados, inclusive o produto; a situação (ativo) continua a mesma
     @Transactional
     public CupomResponse atualizar(Long idEmpresa, Long idCupom, CupomRequest dados) {
-        Cupom cupom = encontrar(idEmpresa, idCupom);
+        Cupom cupom = encontrarParaAtualizar(idEmpresa, idCupom);
         cupom.atualizar(produtoDaEmpresa(idEmpresa, dados.produto()), dados.desconto(), dados.dataValidade(),
                 dados.pontosNecessarios());
         return resposta(cupom);
@@ -89,7 +89,7 @@ public class CupomService {
 
     @Transactional
     public CupomResponse alterarAtivo(Long idEmpresa, Long idCupom, boolean ativo) {
-        Cupom cupom = encontrar(idEmpresa, idCupom);
+        Cupom cupom = encontrarParaAtualizar(idEmpresa, idCupom);
         cupom.alterarAtivo(ativo);
         return resposta(cupom);
     }
@@ -97,6 +97,12 @@ public class CupomService {
     // Cupom de outra empresa responde como inexistente
     private Cupom encontrar(Long idEmpresa, Long idCupom) {
         return cupomRepository.findByIdAndEmpresaId(idCupom, idEmpresa)
+                .orElseThrow(() -> new NaoEncontradoException("Cupom não encontrado"));
+    }
+
+    // Travado até o fim da transação: quem grava o cupom espera quem já o está alterando
+    private Cupom encontrarParaAtualizar(Long idEmpresa, Long idCupom) {
+        return cupomRepository.findByIdAndEmpresaIdParaAtualizar(idCupom, idEmpresa)
                 .orElseThrow(() -> new NaoEncontradoException("Cupom não encontrado"));
     }
 

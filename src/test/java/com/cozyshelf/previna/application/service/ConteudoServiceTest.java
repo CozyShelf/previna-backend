@@ -137,7 +137,7 @@ class ConteudoServiceTest {
     @Test
     void publicarGravaADataEDespublicarALimpa() {
         var conteudo = novo(5L, TipoConteudo.TEXTO, null);
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.of(conteudo));
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.of(conteudo));
 
         var publicada = service.alterarPublicacao(5L, true);
         assertTrue(publicada.publicado());
@@ -150,7 +150,7 @@ class ConteudoServiceTest {
 
     @Test
     void alterarPublicacaoDeConteudoInexistenteDaNaoEncontrado() {
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.empty());
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.empty());
 
         assertThrows(NaoEncontradoException.class, () -> service.alterarPublicacao(5L, true));
     }
@@ -158,7 +158,7 @@ class ConteudoServiceTest {
     @Test
     void atualizaMantendoAFotoJaSalvaQuandoNenhumaNovaEEnviada() {
         var conteudo = novo(5L, TipoConteudo.FOTO, "/conteudos/5/imagem?v=1");
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.of(conteudo));
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.of(conteudo));
 
         var resposta = service.atualizar(5L, FOTO, null);
 
@@ -170,7 +170,7 @@ class ConteudoServiceTest {
     @Test
     void sairDeFotoApagaAImagemGuardada() {
         var conteudo = novo(5L, TipoConteudo.FOTO, "/conteudos/5/imagem?v=1");
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.of(conteudo));
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.of(conteudo));
 
         var resposta = service.atualizar(5L, LINK, null);
 
@@ -193,7 +193,7 @@ class ConteudoServiceTest {
     @Test
     void recusaArquivoAoAtualizarParaTipoQueNaoEFoto() {
         assertThrows(DadosInvalidosException.class, () -> service.atualizar(5L, LINK, arquivo(PNG)));
-        verify(conteudoRepository, never()).findById(any());
+        verify(conteudoRepository, never()).findByIdParaAtualizar(any());
         verify(imagemRepository, never()).save(any());
     }
 
@@ -210,7 +210,7 @@ class ConteudoServiceTest {
     @Test
     void sairDeFotoParaTextoLimpaOEnderecoDaFoto() {
         var conteudo = novo(5L, TipoConteudo.FOTO, "/conteudos/5/imagem?v=1");
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.of(conteudo));
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.of(conteudo));
 
         var resposta = service.atualizar(5L, TEXTO, null);
 
@@ -220,7 +220,7 @@ class ConteudoServiceTest {
 
     @Test
     void atualizarConteudoInexistenteDaNaoEncontrado() {
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.empty());
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.empty());
 
         assertThrows(NaoEncontradoException.class, () -> service.atualizar(5L, TEXTO, null));
     }
@@ -261,7 +261,7 @@ class ConteudoServiceTest {
 
     @Test
     void excluirConteudoInexistenteDaNaoEncontrado() {
-        when(conteudoRepository.findById(5L)).thenReturn(Optional.empty());
+        when(conteudoRepository.findByIdParaAtualizar(5L)).thenReturn(Optional.empty());
 
         assertThrows(NaoEncontradoException.class, () -> service.excluir(5L));
         // O tipo explícito desfaz a ambiguidade com delete(Specification) do JpaSpecificationExecutor

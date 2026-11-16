@@ -1,27 +1,45 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.AtualizacaoPerfilGestanteRequest;
+import com.cozyshelf.previna.application.dto.request.ConteudoRequest;
+import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoEmpresaRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
+import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
 import com.cozyshelf.previna.domain.model.Agendamento;
+import com.cozyshelf.previna.domain.model.Categoria;
+import com.cozyshelf.previna.domain.model.CategoriaConteudo;
+import com.cozyshelf.previna.domain.model.ConteudoInformativo;
+import com.cozyshelf.previna.domain.model.Cupom;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
+import com.cozyshelf.previna.domain.model.Produto;
+import com.cozyshelf.previna.domain.model.Promocao;
+import com.cozyshelf.previna.domain.model.TipoConteudo;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
+import com.cozyshelf.previna.domain.repository.ConteudoInformativoRepository;
+import com.cozyshelf.previna.domain.repository.CupomRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.FotoGestanteRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
+import com.cozyshelf.previna.domain.repository.ImagemConteudoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
+import com.cozyshelf.previna.domain.repository.ProdutoRepository;
+import com.cozyshelf.previna.domain.repository.PromocaoRepository;
 import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import com.cozyshelf.previna.domain.repository.UsuarioRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mockito.stubbing.Answer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,16 +48,19 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
@@ -79,6 +100,24 @@ class CondicoesDeCorridaIntegracaoTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
     @Autowired
+    private CupomService cupomService;
+    @Autowired
+    private PromocaoService promocaoService;
+    @Autowired
+    private ConteudoService conteudoService;
+    @Autowired
+    private CupomRepository cupomRepository;
+    @Autowired
+    private ConteudoInformativoRepository conteudoRepository;
+    @MockitoSpyBean
+    private ProdutoRepository produtoRepository;
+    @MockitoSpyBean
+    private PromocaoRepository promocaoRepository;
+    @MockitoSpyBean
+    private ImagemConteudoRepository imagemConteudoRepository;
+    @Autowired
+    private EntityManager entityManager;
+    @Autowired
     private MedicoRepository medicoRepository;
     @Autowired
     private GestanteRepository gestanteRepository;
@@ -94,7 +133,7 @@ class CondicoesDeCorridaIntegracaoTest {
 
     @BeforeEach
     void preparar() {
-        reset(fotoRepository, usuarioRepository);
+        reset(fotoRepository, usuarioRepository, produtoRepository, promocaoRepository, imagemConteudoRepository);
         executor = Executors.newFixedThreadPool(4);
         long n = SEQUENCIA.incrementAndGet();
         medico = medicoRepository.save(new Medico("Dra. Ana", cpf(n), null, "CRM-" + n, "medico" + n, "hash", false));
@@ -291,5 +330,146 @@ class CondicoesDeCorridaIntegracaoTest {
         assertEquals(venceuA ? loginA : loginB, linha.get("login"));
         assertTrue(passwordEncoder.matches(venceuA ? senhaA : senhaB, (String) linha.get("senha_hash")));
         assertEquals("ATIVA", linha.get("status_conta"));
+    }
+
+    // ---- Edições concorrentes do mesmo registro ----
+
+    // Segura a primeira transação que chegar ao ponto marcado até o teste liberar
+    private static final class Pausa {
+        private final AtomicBoolean usada = new AtomicBoolean();
+        private final CountDownLatch chegou = new CountDownLatch(1);
+        private final CountDownLatch liberar = new CountDownLatch(1);
+
+        void segurarAPrimeira() throws InterruptedException {
+            if (usada.compareAndSet(false, true)) {
+                chegou.countDown();
+                assertTrue(liberar.await(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    // A edição é segurada no meio, já com o registro lido; a outra alteração roda enquanto isso. Sem a trava, ela
+    // comita no meio e a edição grava por cima o valor que leu; com a trava, ela espera a edição terminar
+    private void alterarDuranteAEdicao(Pausa pausa, Callable<?> edicao, Callable<?> alteracao) throws Exception {
+        Future<?> editando = executor.submit(edicao);
+        assertTrue(pausa.chegou.await(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+        Future<?> alterando = executor.submit(alteracao);
+        esperarAte(() -> alterando.isDone() || haTransacaoEsperandoTrava());
+        pausa.liberar.countDown();
+        editando.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
+        alterando.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
+    }
+
+    private EmpresaParceira empresa() {
+        long n = SEQUENCIA.incrementAndGet();
+        return empresaRepository.save(new EmpresaParceira("Farmácia " + n, "%014d".formatted(n), null, null, null,
+                "empresa" + n, "hash"));
+    }
+
+    @Test
+    void desativarOCupomDuranteUmaEdicaoNaoEDesfeitoPelaEdicao() throws Exception {
+        EmpresaParceira empresa = empresa();
+        Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null, Categoria.FRALDAS,
+                null));
+        LocalDate validade = LocalDate.now().plusDays(30);
+        Cupom cupom = cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN, validade, 100));
+        Pausa pausa = new Pausa();
+        // A edição confere o produto depois de ler o cupom e antes de gravar
+        doAnswer(chamada -> {
+            pausa.segurarAPrimeira();
+            return Optional.ofNullable(entityManager.find(Produto.class, chamada.getArgument(0)));
+        }).when(produtoRepository).findByIdAndEmpresaId(any(), any());
+
+        alterarDuranteAEdicao(pausa,
+                () -> cupomService.atualizar(empresa.getId(), cupom.getId(),
+                        new CupomRequest(fralda.getId(), new BigDecimal("15"), validade, 50)),
+                () -> cupomService.alterarAtivo(empresa.getId(), cupom.getId(), false));
+
+        var linha = jdbc.queryForMap("SELECT ativo, pontos_necessarios FROM cupom WHERE id = ?", cupom.getId());
+        assertEquals(false, linha.get("ativo"));
+        assertEquals(50, linha.get("pontos_necessarios"));
+    }
+
+    // Lê a promoção como o repositório leria (com ou sem trava) e segura a primeira transação logo depois
+    private Answer<Optional<Promocao>> promocaoLidaComPausa(LockModeType trava, Pausa pausa) {
+        return chamada -> {
+            Optional<Promocao> promocao = entityManager.createQuery(
+                            "select p from Promocao p where p.id = :id and p.empresaId = :empresaId", Promocao.class)
+                    .setParameter("id", chamada.getArgument(0))
+                    .setParameter("empresaId", chamada.getArgument(1))
+                    .setLockMode(trava)
+                    .getResultStream().findFirst();
+            pausa.segurarAPrimeira();
+            return promocao;
+        };
+    }
+
+    @Test
+    void desativarAPromocaoDuranteUmaEdicaoNaoEDesfeitoPelaEdicao() throws Exception {
+        EmpresaParceira empresa = empresa();
+        LocalDate inicio = LocalDate.now();
+        Promocao promocao = promocaoRepository.save(new Promocao(empresa.getId(), "Semana do bebê", null,
+                BigDecimal.TEN, inicio, inicio.plusDays(7), Categoria.FRALDAS));
+        Pausa pausa = new Pausa();
+        // A PromocaoService não chama nada entre ler e gravar: a pausa vai logo depois da leitura
+        doAnswer(promocaoLidaComPausa(LockModeType.NONE, pausa))
+                .when(promocaoRepository).findByIdAndEmpresaId(any(), any());
+        doAnswer(promocaoLidaComPausa(LockModeType.PESSIMISTIC_WRITE, pausa))
+                .when(promocaoRepository).findByIdAndEmpresaIdParaAtualizar(any(), any());
+
+        alterarDuranteAEdicao(pausa,
+                () -> promocaoService.atualizar(empresa.getId(), promocao.getId(), new PromocaoRequest(
+                        "Semana do bebê 2", null, new BigDecimal("20"), inicio, inicio.plusDays(7), Categoria.FRALDAS)),
+                () -> promocaoService.alterarAtivo(empresa.getId(), promocao.getId(), false));
+
+        var linha = jdbc.queryForMap("SELECT ativo, titulo FROM promocao WHERE id = ?", promocao.getId());
+        assertEquals(false, linha.get("ativo"));
+        assertEquals("Semana do bebê 2", linha.get("titulo"));
+    }
+
+    @Test
+    void publicarOConteudoDuranteUmaEdicaoNaoEDesfeitoPelaEdicao() throws Exception {
+        ConteudoInformativo conteudo = conteudoRepository.save(new ConteudoInformativo(medico.getId(), "Hidratação",
+                CategoriaConteudo.DICA, TipoConteudo.TEXTO, null, "Beba água", null));
+        Pausa pausa = new Pausa();
+        // Fora de FOTO, a edição apaga a imagem guardada depois de alterar o conteúdo e antes de gravar
+        doAnswer(chamada -> {
+            pausa.segurarAPrimeira();
+            return null;
+        }).when(imagemConteudoRepository).deleteAllById(any());
+
+        alterarDuranteAEdicao(pausa,
+                () -> conteudoService.atualizar(conteudo.getId(), new ConteudoRequest("Hidratação na gestação",
+                        CategoriaConteudo.DICA, TipoConteudo.TEXTO, null, "Beba bastante água", null), null),
+                () -> conteudoService.alterarPublicacao(conteudo.getId(), true));
+
+        var linha = jdbc.queryForMap("SELECT publicado, publicado_em, titulo FROM conteudo_informativo WHERE id = ?",
+                conteudo.getId());
+        assertEquals(true, linha.get("publicado"));
+        assertNotNull(linha.get("publicado_em"));
+        assertEquals("Hidratação na gestação", linha.get("titulo"));
+    }
+
+    @Test
+    void excluirOConteudoDuranteUmaEdicaoEsperaAEdicao() throws Exception {
+        ConteudoInformativo conteudo = conteudoRepository.save(new ConteudoInformativo(medico.getId(), "Hidratação",
+                CategoriaConteudo.DICA, TipoConteudo.TEXTO, null, "Beba água", null));
+        Pausa pausa = new Pausa();
+        doAnswer(chamada -> {
+            pausa.segurarAPrimeira();
+            return null;
+        }).when(imagemConteudoRepository).deleteAllById(any());
+
+        // Sem a trava, a exclusão comitava no meio e a edição falhava ao gravar uma linha que não existe mais
+        alterarDuranteAEdicao(pausa,
+                () -> conteudoService.atualizar(conteudo.getId(), new ConteudoRequest("Hidratação na gestação",
+                        CategoriaConteudo.DICA, TipoConteudo.TEXTO, null, "Beba bastante água", null), null),
+                () -> {
+                    conteudoService.excluir(conteudo.getId());
+                    return null;
+                });
+
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM conteudo_informativo WHERE id = ?",
+                Integer.class, conteudo.getId()));
     }
 }

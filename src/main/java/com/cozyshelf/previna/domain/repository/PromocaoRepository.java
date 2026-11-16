@@ -1,9 +1,11 @@
 package com.cozyshelf.previna.domain.repository;
 
 import com.cozyshelf.previna.domain.model.Promocao;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +16,11 @@ import java.util.Optional;
 
 public interface PromocaoRepository extends JpaRepository<Promocao, Long>, JpaSpecificationExecutor<Promocao> {
     Optional<Promocao> findByIdAndEmpresaId(Long id, Long empresaId);
+
+    // SELECT ... FOR UPDATE para quem altera a promoção, como no cupom: a edição não sobrescreve o ativo
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Promocao p where p.id = :id and p.empresaId = :empresaId")
+    Optional<Promocao> findByIdAndEmpresaIdParaAtualizar(@Param("id") Long id, @Param("empresaId") Long empresaId);
 
     // Promoções ativas das empresas com o dia entre o início e o fim (os dois inclusive), para o catálogo de ofertas
     @Query("select p from Promocao p where p.empresaId in :empresas and p.ativo = true"
