@@ -47,7 +47,8 @@ data_confirmacao = agora;
 (fator 1,00 sem dados socioeconômicos);
 :insere transacao_pontos
 (tipo = CREDITO, pontos, fator_aplicado, agendamento);
-:gestante.saldo_pontos += pontos;
+:UPDATE gestante SET saldo_pontos =
+saldo_pontos + pontos;
 
 |AgendamentoService|
 :insere log_auditoria (previsto)

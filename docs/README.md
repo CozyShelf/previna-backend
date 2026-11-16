@@ -28,6 +28,14 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   encontra o desfecho já registrado e recebe `409`. `transacao_pontos.agendamento_id` é `UNIQUE` como última barreira.
 - **Saldo de pontos:** `gestante.saldo_pontos` é atualizado junto com o extrato, com a gestante travada (a mesma trava
   do resgate de cupom). Sem ela, créditos simultâneos de agendamentos diferentes leriam o mesmo saldo e perderiam pontos.
+  O saldo só muda por `UPDATE` atômico (`saldo_pontos = saldo_pontos ± pontos`; o débito só com saldo): a entidade
+  `Gestante` não grava a coluna, senão editar o perfil gravaria o saldo lido no começo por cima de um crédito comitado
+  no meio. O CHECK `saldo_pontos >= 0` (`V19`) é a última barreira.
+- **Duplo toque no resgate:** o app manda o header `Idempotency-Key` (UUID novo a cada confirmação). A mesma chave da
+  mesma gestante devolve `200` com o resgate já feito e o saldo atual, sem novo débito; chave nova, `201`; chave que
+  não é UUID, `400`. Sem o header (versões antigas do app), cada chamada é um resgate — resgatar o mesmo cupom mais de
+  uma vez é permitido. A busca pela chave é feita com a gestante travada; o UNIQUE `(gestante_id, chave_idempotencia)`
+  (`V20`) é a última barreira.
 - **Auditoria pendente:** os diagramas de cadastro e de confirmação marcam `log_auditoria` como previsto: ainda não
   tem migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
   `agendamento.data_confirmacao`.
