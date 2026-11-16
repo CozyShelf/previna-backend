@@ -1,6 +1,6 @@
 package com.cozyshelf.previna.controller;
 
-import com.cozyshelf.previna.application.dto.request.AtivacaoCupomRequest;
+import com.cozyshelf.previna.application.dto.request.AtivacaoRequest;
 import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.ListagemRequest;
 import com.cozyshelf.previna.application.dto.response.CupomResponse;
@@ -72,7 +72,7 @@ public class CupomController {
     @Operation(summary = "Ativa ou desativa um cupom da empresa autenticada")
     public ResponseEntity<CupomResponse> alterarAtivo(
             @PathVariable Long id,
-            @RequestBody @Valid AtivacaoCupomRequest dados,
+            @RequestBody @Valid AtivacaoRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado empresa) {
         return ResponseEntity.ok(cupomService.alterarAtivo(empresa.id(), id, dados.ativo()));
     }
