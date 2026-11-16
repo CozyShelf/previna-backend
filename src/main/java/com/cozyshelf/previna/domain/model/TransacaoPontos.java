@@ -88,6 +88,7 @@ public class TransacaoPontos {
         if (agendamento != null) {
             return agendamento.getTipo().getNome();
         }
-        return cupomResgatado != null ? "Cupom: " + cupomResgatado.getCupom().getDescricao() : "Resgate de cupom";
+        // Do resgate, e não do cupom atual: editar o cupom depois não reescreve o extrato
+        return cupomResgatado != null ? "Cupom: " + cupomResgatado.getDescricao() : "Resgate de cupom";
     }
 }

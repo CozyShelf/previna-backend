@@ -47,8 +47,13 @@ public class Cupom {
 
     // Montada na leitura, e não guardada, para acompanhar o nome atual do produto: "12,5% de desconto em Fralda RN"
     public String getDescricao() {
+        return descricao(desconto, produto.getNome());
+    }
+
+    // Mesma frase para o cupom e para a cópia guardada no resgate
+    static String descricao(BigDecimal desconto, String nomeProduto) {
         return "%s%% de desconto em %s".formatted(desconto.stripTrailingZeros().toPlainString().replace('.', ','),
-                produto.getNome());
+                nomeProduto);
     }
 
     public BigDecimal getDesconto() {
