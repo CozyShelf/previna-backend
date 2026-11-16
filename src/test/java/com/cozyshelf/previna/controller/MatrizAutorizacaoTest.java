@@ -7,6 +7,7 @@ import com.cozyshelf.previna.application.service.CupomService;
 import com.cozyshelf.previna.application.service.EmpresaService;
 import com.cozyshelf.previna.application.service.GestanteService;
 import com.cozyshelf.previna.application.service.MedicoService;
+import com.cozyshelf.previna.application.service.OfertaService;
 import com.cozyshelf.previna.application.service.PontuacaoService;
 import com.cozyshelf.previna.application.service.ProdutoService;
 import com.cozyshelf.previna.application.service.PromocaoService;
@@ -149,6 +150,9 @@ class MatrizAutorizacaoTest {
             Rota.get("/gestantes/extrato", EnumSet.of(GESTANTE)),
             Rota.get("/cupons/disponiveis", EnumSet.of(GESTANTE)),
             Rota.post("/cupons/{id}/resgatar", EnumSet.of(GESTANTE)),
+            Rota.get("/ofertas", EnumSet.of(GESTANTE)),
+            Rota.get("/ofertas/empresas/{empresaId}/produtos", EnumSet.of(GESTANTE)),
+            Rota.get("/ofertas/produtos/{id}", EnumSet.of(GESTANTE)),
 
             // Empresa parceira
             Rota.get("/empresas/perfil", EnumSet.of(EMPRESA_PARCEIRA)),
@@ -210,6 +214,8 @@ class MatrizAutorizacaoTest {
     @MockitoBean
     private MedicoService medicoService;
     @MockitoBean
+    private OfertaService ofertaService;
+    @MockitoBean
     private PontuacaoService pontuacaoService;
     @MockitoBean
     private ProdutoService produtoService;
@@ -220,7 +226,8 @@ class MatrizAutorizacaoTest {
 
     private Object[] servicos() {
         return new Object[]{agendamentoService, authService, conteudoService, cupomService, empresaService, gestanteService,
-                medicoService, pontuacaoService, produtoService, promocaoService, tipoAtendimentoService};
+                medicoService, ofertaService, pontuacaoService, produtoService, promocaoService,
+                tipoAtendimentoService};
     }
 
     @AfterEach
@@ -383,7 +390,7 @@ class MatrizAutorizacaoTest {
         }
 
         MockHttpServletRequestBuilder requisicao(String token) {
-            String uri = caminho.replace("{id}", "1");
+            String uri = caminho.replaceAll("\\{[^}]+}", "1");
             MockHttpServletRequestBuilder req;
             if (corpo.multipart() != null) {
                 MockMultipartHttpServletRequestBuilder multipart = multipart(metodo, uri);
