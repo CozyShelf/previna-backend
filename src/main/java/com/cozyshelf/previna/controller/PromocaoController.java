@@ -1,5 +1,6 @@
 package com.cozyshelf.previna.controller;
 
+import com.cozyshelf.previna.application.dto.request.AtivacaoRequest;
 import com.cozyshelf.previna.application.dto.request.ListagemRequest;
 import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
@@ -59,11 +60,20 @@ public class PromocaoController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Atualiza uma promoção da empresa autenticada")
+    @Operation(summary = "Atualiza uma promoção da empresa autenticada; a situação (ativo) não muda")
     public ResponseEntity<PromocaoResponse> atualizar(
             @PathVariable Long id,
             @RequestBody @Valid PromocaoRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado empresa) {
         return ResponseEntity.ok(promocaoService.atualizar(empresa.id(), id, dados));
+    }
+
+    @PutMapping("/{id}/ativo")
+    @Operation(summary = "Ativa ou desativa uma promoção da empresa autenticada; desativada sai do catálogo de ofertas")
+    public ResponseEntity<PromocaoResponse> alterarAtivo(
+            @PathVariable Long id,
+            @RequestBody @Valid AtivacaoRequest dados,
+            @AuthenticationPrincipal UsuarioAutenticado empresa) {
+        return ResponseEntity.ok(promocaoService.alterarAtivo(empresa.id(), id, dados.ativo()));
     }
 }

@@ -18,10 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 // Catálogo de ofertas da gestante. Um produto tem oferta se tiver ao menos um cupom válido (ativo e dentro da
-// validade) ou uma promoção vigente da mesma empresa na categoria dele; produto sem categoria nunca tem promoção.
-// Empresa sem produto com oferta não aparece.
-// shortcut: a promoção ainda não tem situação (ativo); entra em promocaoVigente e em PromocaoRepository.vigentes
-// quando a coluna existir (#17)
+// validade) ou uma promoção vigente (ativa e dentro do período) da mesma empresa na categoria dele; produto sem
+// categoria nunca tem promoção. Empresa sem produto com oferta não aparece.
 public final class Ofertas {
     private Ofertas() {
     }
@@ -92,7 +90,7 @@ public final class Ofertas {
         return cb.exists(cupons);
     }
 
-    // Mesma empresa e mesma categoria do produto, com o dia entre o início e o fim (os dois inclusive)
+    // Ativa, da mesma empresa e da mesma categoria do produto, com o dia entre o início e o fim (os dois inclusive)
     private static Predicate promocaoVigente(Root<Produto> produto, AbstractQuery<?> consulta, CriteriaBuilder cb,
                                              LocalDate dia) {
         Subquery<Long> promocoes = consulta.subquery(Long.class);
@@ -100,6 +98,7 @@ public final class Ofertas {
         promocoes.select(promocao.get("id")).where(
                 cb.equal(promocao.get("empresaId"), produto.get("empresaId")),
                 cb.equal(promocao.get("categoria"), produto.get("categoria")),
+                cb.isTrue(promocao.get("ativo")),
                 cb.lessThanOrEqualTo(promocao.get("dataInicio"), dia),
                 cb.greaterThanOrEqualTo(promocao.get("dataFim"), dia));
         // Igualdade com nulo já é falsa no SQL; explícito para a regra ficar à vista

@@ -42,9 +42,29 @@ else dados válidos na tela
     end
 end
 
+== Ativar ou desativar ==
+
+Empresa -> Portal : Clica em "Desativar" (ou "Ativar") na lista de promoções
+Portal -> Controller : PUT /empresas/promocoes/{id}/ativo (ativo)
+Controller -> Service : alterarAtivo(idEmpresa do token, idPromocao, ativo)
+Service -> BD : buscarPromocao(idPromocao, idEmpresa)
+BD --> Service : resultado
+
+alt promoção inexistente ou de outra empresa
+    Service --> Controller : Erro: promoção não encontrada
+    Controller --> Portal : 404 Not Found
+    Portal --> Empresa : Exibe "Não foi possível alterar"
+else promoção da empresa
+    Service -> BD : atualizarAtivo(idPromocao, ativo)
+    Controller --> Portal : 200 OK
+    Portal --> Empresa : Mostra a nova situação (Ativa/Inativa) na linha
+end
+
 note over Empresa, BD
     A promoção é geral: vale para todos os produtos da empresa na categoria escolhida, inclusive os cadastrados depois.
     Desconto para um produto específico é cupom (ver cadastrar-cupom).
+    É informativa: a gestante não gasta pontos nem recebe código. Nasce ativa; desativada (ou fora do período)
+    não aparece no catálogo de ofertas do app, e editar não muda a situação.
 end note
 
 @enduml

@@ -22,6 +22,8 @@ public class Promocao {
     // Vale para todos os produtos da empresa nesta categoria
     @Enumerated(EnumType.STRING)
     private Categoria categoria;
+    // Desativada não aparece no catálogo de ofertas, mesmo dentro do período
+    private boolean ativo;
 
     protected Promocao() {
     }
@@ -35,8 +37,10 @@ public class Promocao {
         this.dataInicio = dataInicio;
         this.dataFim = dataFim;
         this.categoria = categoria;
+        this.ativo = true;
     }
 
+    // A situação (ativo) não muda aqui: tem a própria ação
     public void atualizar(String titulo, String descricao, BigDecimal desconto, LocalDate dataInicio,
                           LocalDate dataFim, Categoria categoria) {
         this.titulo = titulo;
@@ -83,5 +87,13 @@ public class Promocao {
 
     public Categoria getCategoria() {
         return categoria;
+    }
+
+    public boolean isAtivo() {
+        return ativo;
+    }
+
+    public void alterarAtivo(boolean ativo) {
+        this.ativo = ativo;
     }
 }

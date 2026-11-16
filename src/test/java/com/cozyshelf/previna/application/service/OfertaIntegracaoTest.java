@@ -183,6 +183,33 @@ class OfertaIntegracaoTest {
     }
 
     @Test
+    void promocaoDesativadaNaoValeNoCatalogo() {
+        EmpresaParceira loja = empresa("Loja");
+        Produto body = produto(loja, "Body", Categoria.ROUPAS);
+        Produto fralda = produto(loja, "Fralda RN", Categoria.FRALDAS);
+        cupom(fralda, 100);
+        Promocao roupas = promocao(loja, Categoria.ROUPAS, "30", HOJE, HOJE.plusDays(5));
+        Promocao fraldas = promocao(loja, Categoria.FRALDAS, "20", HOJE, HOJE.plusDays(5));
+        roupas.alterarAtivo(false);
+        fraldas.alterarAtivo(false);
+        promocaoRepository.saveAll(List.of(roupas, fraldas));
+
+        // O body só tinha a promoção, agora desativada; a fralda continua pelo cupom, sem a promoção
+        var produtos = empresas(filtro(null, null, null)).getFirst().produtos();
+        assertEquals(List.of("Fralda RN"), nomes(produtos));
+        assertNull(produtos.getFirst().descontoPromocao());
+        assertTrue(empresas(filtro(TipoOferta.PROMOCAO, null, null)).isEmpty());
+        assertTrue(ofertaService.detalhar(fralda.getId()).promocoes().isEmpty());
+        assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(body.getId()));
+
+        // Reativada, volta
+        fraldas.alterarAtivo(true);
+        promocaoRepository.save(fraldas);
+        assertEquals(0, new BigDecimal("20").compareTo(
+                empresas(filtro(TipoOferta.PROMOCAO, null, null)).getFirst().produtos().getFirst().descontoPromocao()));
+    }
+
+    @Test
     void promocaoDeOutraEmpresaNaoValeParaOProduto() {
         EmpresaParceira loja = empresa("Loja");
         EmpresaParceira outra = empresa("Outra");

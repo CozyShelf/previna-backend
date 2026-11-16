@@ -12,5 +12,6 @@ public record PromocaoResponse(
         BigDecimal desconto,
         LocalDate dataInicio,
         LocalDate dataFim,
-        Categoria categoria
+        Categoria categoria,
+        boolean ativo
 ) {}
