@@ -44,6 +44,11 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   (`AutorizacaoAntesDaValidacao`): papel errado recebe `403` mesmo com corpo inválido, sem ver as regras de validação.
 - **Primeiro acesso:** o token da senha temporária tem o papel `PRIMEIRO_ACESSO_<perfil>` (`PRIMEIRO_ACESSO_GESTANTE`,
   `PRIMEIRO_ACESSO_EMPRESA_PARCEIRA`): cada tipo de conta só conclui o próprio primeiro acesso.
+  A conclusão lê a conta com `SELECT ... FOR UPDATE`: a segunda conclusão simultânea espera a primeira e recebe `409`
+  "Primeiro acesso já concluído", em vez de sobrescrever as credenciais.
+- **Edições concorrentes:** quem grava cupom, promoção ou conteúdo (editar, ativar/desativar, publicar/despublicar,
+  excluir) lê o registro com `SELECT ... FOR UPDATE`. Sem `@Version`, o Hibernate grava todas as colunas, e a edição
+  gravaria o `ativo`/`publicado` que leu por cima de uma desativação comitada no meio. As leituras não travam.
 - **Usuário do token:** as rotas da gestante e da empresa não levam o id do usuário no caminho (`/gestantes/pontuacao`, `/empresas/produtos`); recurso de outro usuário responde como inexistente (404).
 - **Quem publica conteúdo educativo:** só o admin (usuário interno do Previna), registrado em
   `conteudo_informativo.autor_id`. O médico não publica.
