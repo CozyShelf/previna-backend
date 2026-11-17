@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -137,6 +138,7 @@ class PromocaoServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.cadastrar(1L, dados(HOJE, HOJE)));
         assertEquals(SOBREPOSTA, erro.getMessage());
+        assertEquals(CodigoErro.PROMOCAO_SOBREPOSTA, erro.getCodigo());
     }
 
     @Test
@@ -145,10 +147,14 @@ class PromocaoServiceTest {
         when(promocaoRepository.findByIdAndEmpresaIdParaAtualizar(5L, 1L)).thenReturn(Optional.of(promocao));
         doThrow(violacao("promocao_sem_sobreposicao")).when(promocaoRepository).flush();
 
-        assertEquals(SOBREPOSTA, assertThrows(ConflitoException.class,
-                () -> service.atualizar(1L, 5L, dados(HOJE, HOJE.plusDays(7)))).getMessage());
-        assertEquals(SOBREPOSTA, assertThrows(ConflitoException.class,
-                () -> service.alterarAtivo(1L, 5L, true)).getMessage());
+        var naEdicao = assertThrows(ConflitoException.class,
+                () -> service.atualizar(1L, 5L, dados(HOJE, HOJE.plusDays(7))));
+        var naAtivacao = assertThrows(ConflitoException.class, () -> service.alterarAtivo(1L, 5L, true));
+
+        assertEquals(SOBREPOSTA, naEdicao.getMessage());
+        assertEquals(CodigoErro.PROMOCAO_SOBREPOSTA, naEdicao.getCodigo());
+        assertEquals(SOBREPOSTA, naAtivacao.getMessage());
+        assertEquals(CodigoErro.PROMOCAO_SOBREPOSTA, naAtivacao.getCodigo());
     }
 
     // Cadastrar, editar e ativar entram na fila da empresa antes de gravar; desativar nunca conflita e não entra
@@ -294,6 +300,7 @@ class PromocaoServiceTest {
     private void assertIndisponivel() {
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Promoção indisponível", erro.getMessage());
+        assertEquals(CodigoErro.PROMOCAO_INDISPONIVEL, erro.getCodigo());
         verify(resgatadoRepository, never()).saveAndFlush(any());
     }
 
@@ -306,6 +313,7 @@ class PromocaoServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, UUID.randomUUID()));
         assertEquals("Promoção já resgatada", erro.getMessage());
+        assertEquals(CodigoErro.PROMOCAO_JA_RESGATADA, erro.getCodigo());
     }
 
     @Test

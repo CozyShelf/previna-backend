@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.CupomRequest;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -276,6 +277,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
+        assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
         verify(resgatadoRepository, never()).save(any());
     }
 
@@ -287,6 +289,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
+        assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
     }
 
     @Test
@@ -301,6 +304,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Pontos insuficientes", erro.getMessage());
+        assertEquals(CodigoErro.PONTOS_INSUFICIENTES, erro.getCodigo());
         verify(resgatadoRepository, never()).save(any());
         verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
     }
@@ -323,6 +327,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Pontos insuficientes", erro.getMessage());
+        assertEquals(CodigoErro.PONTOS_INSUFICIENTES, erro.getCodigo());
     }
 
     @Test
@@ -335,6 +340,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
+        assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
     }
 
     @Test

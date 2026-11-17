@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.ExtratoRequest;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
@@ -167,6 +168,7 @@ class PontuacaoServiceTest {
         var erro = assertThrows(ConflitoException.class, () -> service.debitarPontos(gestante, 200, resgatado));
 
         assertEquals("Pontos insuficientes", erro.getMessage());
+        assertEquals(CodigoErro.PONTOS_INSUFICIENTES, erro.getCodigo());
         assertEquals(500, gestante.getSaldoPontos());
     }
 

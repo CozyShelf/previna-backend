@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.application.service.CupomService;
@@ -17,6 +18,7 @@ import com.cozyshelf.previna.infrastructure.config.SecurityConfig;
 import com.cozyshelf.previna.infrastructure.security.JwtService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -125,13 +127,17 @@ class ResgatePromocaoControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Promoção indisponível", "Promoção já resgatada"})
-    void regraVioladaResponde409ComAMensagem(String mensagem) throws Exception {
-        when(promocaoService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem));
+    @CsvSource({
+            "Promoção indisponível, PROMOCAO_INDISPONIVEL",
+            "Promoção já resgatada, PROMOCAO_JA_RESGATADA"
+    })
+    void regraVioladaResponde409ComAMensagemEOCodigo(String mensagem, CodigoErro codigo) throws Exception {
+        when(promocaoService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem, codigo));
 
         mvc.perform(post("/promocoes/5/resgatar").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(mensagem));
+                .andExpect(jsonPath("$.message").value(mensagem))
+                .andExpect(jsonPath("$.codigo").value(codigo.name()));
     }
 
     @Test

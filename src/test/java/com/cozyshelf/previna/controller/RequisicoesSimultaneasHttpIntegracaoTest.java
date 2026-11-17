@@ -309,7 +309,9 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
         var respostas = aoMesmoTempo(List.of(resgatar(gestante, cupom, null), resgatar(gestante, cupom, null)));
 
         assertEquals(List.of(201, 409), status(respostas));
-        assertEquals("Pontos insuficientes", corpo(comStatus(respostas, 409)).get("message").asText());
+        JsonNode conflito = corpo(comStatus(respostas, 409));
+        assertEquals("Pontos insuficientes", conflito.get("message").asText());
+        assertEquals("PONTOS_INSUFICIENTES", conflito.get("codigo").asText());
         assertEquals(40, saldo(gestante));
         assertEquals(1, resgates(gestante));
         assertEquals(1, debitos(gestante));
@@ -365,7 +367,9 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
                     resgatarPromocao(gestante, promocao, UUID.randomUUID().toString())));
 
             assertEquals(List.of(201, 409), status(respostas));
-            assertEquals("Promoção já resgatada", corpo(comStatus(respostas, 409)).get("message").asText());
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals("Promoção já resgatada", conflito.get("message").asText());
+            assertEquals("PROMOCAO_JA_RESGATADA", conflito.get("codigo").asText());
             JsonNode criado = corpo(comStatus(respostas, 201));
             assertEquals("PROMOCAO", criado.get("tipo").asText());
             assertEquals(0, criado.get("pontosGastos").asInt());
@@ -404,8 +408,9 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
                     cadastrarPromocao(empresa, hoje.plusDays(7), hoje.plusDays(14))));
 
             assertEquals(List.of(201, 409), status(respostas));
-            assertEquals("Já existe promoção ativa dessa categoria nesse período",
-                    corpo(comStatus(respostas, 409)).get("message").asText());
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals("Já existe promoção ativa dessa categoria nesse período", conflito.get("message").asText());
+            assertEquals("PROMOCAO_SOBREPOSTA", conflito.get("codigo").asText());
             assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM promocao WHERE empresa_id = ?", Integer.class,
                     empresa.getId()));
         }
@@ -426,8 +431,10 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
                     resolver(agendamento, "nao-compareceu")));
 
             assertEquals(List.of(200, 409), status(respostas));
-            assertEquals("Este agendamento já foi resolvido",
-                    corpo(comStatus(respostas, 409)).get("message").asText());
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals("Este agendamento já foi resolvido", conflito.get("message").asText());
+            // Conflito sem código próprio: o corpo não traz o campo
+            assertFalse(conflito.has("codigo"));
             String statusFinal = jdbc.queryForObject("SELECT status FROM agendamento WHERE id = ?", String.class,
                     agendamento.getId());
             int creditos = jdbc.queryForObject("SELECT count(*) FROM transacao_pontos WHERE agendamento_id = ?",
@@ -464,7 +471,9 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
             var respostas = aoMesmoTempo(List.of(agendar(gestante, tipo, data), agendar(gestante, tipo, data)));
 
             assertEquals(List.of(201, 409), status(respostas));
-            assertEquals(PENDENTE_REPETIDO, corpo(comStatus(respostas, 409)).get("message").asText());
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals(PENDENTE_REPETIDO, conflito.get("message").asText());
+            assertEquals("AGENDAMENTO_PENDENTE_REPETIDO", conflito.get("codigo").asText());
             assertEquals(1, pendentes(gestante));
         }
     }
@@ -479,6 +488,7 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
 
         assertEquals(409, resposta.getStatusCode().value());
         assertEquals(PENDENTE_REPETIDO, corpo(resposta).get("message").asText());
+        assertEquals("AGENDAMENTO_PENDENTE_REPETIDO", corpo(resposta).get("codigo").asText());
         assertEquals(0, pendentes(gestante));
     }
 

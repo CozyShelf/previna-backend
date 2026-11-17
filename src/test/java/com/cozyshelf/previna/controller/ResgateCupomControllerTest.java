@@ -2,6 +2,7 @@ package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.application.service.CupomService;
@@ -20,6 +21,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -251,13 +253,17 @@ class ResgateCupomControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Cupom indisponível", "Pontos insuficientes"})
-    void regraVioladaResponde409ComAMensagem(String mensagem) throws Exception {
-        when(cupomService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem));
+    @CsvSource({
+            "Cupom indisponível, CUPOM_INDISPONIVEL",
+            "Pontos insuficientes, PONTOS_INSUFICIENTES"
+    })
+    void regraVioladaResponde409ComAMensagemEOCodigo(String mensagem, CodigoErro codigo) throws Exception {
+        when(cupomService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem, codigo));
 
         mvc.perform(post("/cupons/5/resgatar").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(mensagem));
+                .andExpect(jsonPath("$.message").value(mensagem))
+                .andExpect(jsonPath("$.codigo").value(codigo.name()));
     }
 
     @ParameterizedTest

@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.request.LoginRequest;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,6 +95,32 @@ class GlobalExceptionHandlerTest {
                         .contentType(MediaType.APPLICATION_JSON).content(MEDICO))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("CRM já cadastrado"));
+    }
+
+    // Os fronts decidem pelo código, não pelo texto: ele vai no corpo ao lado da mensagem
+    @Test
+    void conflitoComCodigoResponde409ComAMensagemEOCodigo() throws Exception {
+        when(medicoService.cadastrar(any()))
+                .thenThrow(new ConflitoException("Promoção já resgatada", CodigoErro.PROMOCAO_JA_RESGATADA));
+
+        mvc.perform(post("/medicos").header("Authorization", tokenAdmin())
+                        .contentType(MediaType.APPLICATION_JSON).content(MEDICO))
+                .andExpect(status().isConflict())
+                .andExpect(content().json("""
+                        {"message":"Promoção já resgatada","codigo":"PROMOCAO_JA_RESGATADA"}""", true));
+    }
+
+    // Sem código, o corpo continua só {"message": ...}: nem "codigo": null
+    @Test
+    void conflitoSemCodigoNaoTrazOCampoCodigo() throws Exception {
+        when(medicoService.cadastrar(any())).thenThrow(new ConflitoException("CRM já cadastrado"));
+
+        mvc.perform(post("/medicos").header("Authorization", tokenAdmin())
+                        .contentType(MediaType.APPLICATION_JSON).content(MEDICO))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").doesNotExist())
+                .andExpect(content().json("""
+                        {"message":"CRM já cadastrado"}""", true));
     }
 
     // Corrida entre duas requisições que passam pela checagem e esbarram no UNIQUE do banco: 409 genérico,
