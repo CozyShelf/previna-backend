@@ -260,6 +260,8 @@ note bottom of agendamento
   Pendente (AGENDADO) passa a REALIZADO ou NAO_COMPARECEU,
   só pelo médico. transacao_pontos.agendamento_id é UNIQUE:
   a confirmação credita os pontos uma vez só.
+  Um AGENDADO só por (gestante_id, tipo_atendimento_id, data_prevista):
+  índice único parcial agendamento_pendente_unico (V21).
 end note
 
 note bottom of promocao

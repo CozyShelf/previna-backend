@@ -48,15 +48,25 @@ else dados válidos
             Tela --> Medico : Exibe mensagem "Tipo de atendimento inválido"
         else todos os tipos válidos
             Service -> BD : salvarAgendamentos(um por item: gestante, tipo, atribuidoPor = idMedico,\ndataPrevista, observacao, status = AGENDADO)
-            BD --> Service : agendamentos salvos
-            Service -> BD : registrarLog(idMedico, agendamentos, evento = AGENDAMENTO_CRIADO)\n(previsto: log_auditoria ainda não tem migração)
-            Service --> Controller : agendamentos
-            Controller --> Tela : 201 Created
-            Tela --> Medico : Exibe os exames e consultas cadastrados na página da gestante
+            BD --> Service : resultado
+
+            alt já existe AGENDADO com a mesma gestante, tipo e data\n(outra requisição ou item repetido na lista)
+                BD --> Service : violação do índice agendamento_pendente_unico
+                Service --> Controller : Erro: pendente repetido (nada é gravado)
+                Controller --> Tela : 409 Conflict
+                Tela --> Medico : Exibe mensagem "Essa gestante já tem esse\nexame ou consulta pendente nessa data"
+            else nenhum pendente igual
+                Service -> BD : registrarLog(idMedico, agendamentos, evento = AGENDAMENTO_CRIADO)\n(previsto: log_auditoria ainda não tem migração)
+                Service --> Controller : agendamentos
+                Controller --> Tela : 201 Created
+                Tela --> Medico : Exibe os exames e consultas cadastrados na página da gestante
+            end
             note over Medico, Service
                 Nenhum ponto é creditado aqui: os pontos do tipo de atendimento
                 só são gerados quando o médico confirmar a realização.
-                Tudo na mesma transação: um tipo inválido não deixa metade do cadastro gravada.
+                Tudo na mesma transação: um tipo inválido ou um pendente repetido
+                não deixa metade do cadastro gravada. O mesmo exame em outra data,
+                ou na mesma data depois do desfecho do anterior, é permitido.
             end note
         end
     end

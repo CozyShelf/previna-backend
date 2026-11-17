@@ -196,6 +196,18 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
                 String.class, agendamento.getId());
     }
 
+    // Cadastro pelo portal: o mesmo tipo em cada uma das datas
+    private Callable<ResponseEntity<String>> agendar(Gestante gestante, TipoAtendimento tipo, LocalDate... datas) {
+        HttpHeaders cabecalhos = autenticado(medico);
+        cabecalhos.setContentType(MediaType.APPLICATION_JSON);
+        List<Map<String, Object>> itens = java.util.Arrays.stream(datas)
+                .map(data -> Map.<String, Object>of("tipoAtendimento", tipo.getId(), "dataPrevista", data.toString()))
+                .toList();
+        Map<String, Object> corpo = Map.of("gestante", gestante.getId(), "itens", itens);
+        return () -> http.exchange("/agendamentos", HttpMethod.POST, new HttpEntity<>(corpo, cabecalhos),
+                String.class);
+    }
+
     private Callable<ResponseEntity<String>> concluirPrimeiroAcesso(Gestante gestante, String login, String senha) {
         HttpHeaders cabecalhos = autenticado(gestante);
         cabecalhos.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -324,6 +336,50 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
             assertEquals("REALIZADO".equals(statusFinal) ? 1 : 0, creditos);
             assertEquals("REALIZADO".equals(statusFinal) ? 40 : 0, saldo(gestante));
         }
+    }
+
+    // ---- Cadastro de agendamento ----
+
+    private static final String PENDENTE_REPETIDO = "Essa gestante já tem esse exame ou consulta pendente nessa data";
+
+    private TipoAtendimento tipo() {
+        return tipoRepository.save(new TipoAtendimento(medico.getId(), "Exame " + SEQUENCIA.incrementAndGet(),
+                CategoriaAtendimento.EXAME, 25));
+    }
+
+    private int pendentes(Gestante gestante) {
+        return jdbc.queryForObject("SELECT count(*) FROM agendamento WHERE gestante_id = ? AND status = 'AGENDADO'",
+                Integer.class, gestante.getId());
+    }
+
+    // Duplo clique no portal: o índice parcial da V21 deixa um pendente só, e o segundo POST recebe 409 com a
+    // mensagem que o portal exibe. Algumas rodadas, porque a ordem de chegada não é forçada
+    @Test
+    void doisCadastrosSimultaneosIguaisGravamUmPendenteSo() throws Exception {
+        for (int rodada = 0; rodada < 3; rodada++) {
+            Gestante gestante = gestanteAtivaComSaldo(0);
+            TipoAtendimento tipo = tipo();
+            LocalDate data = LocalDate.now().plusDays(3);
+
+            var respostas = aoMesmoTempo(List.of(agendar(gestante, tipo, data), agendar(gestante, tipo, data)));
+
+            assertEquals(List.of(201, 409), status(respostas));
+            assertEquals(PENDENTE_REPETIDO, corpo(comStatus(respostas, 409)).get("message").asText());
+            assertEquals(1, pendentes(gestante));
+        }
+    }
+
+    @Test
+    void itemRepetidoNoMesmoCadastroResponde409ENaoGravaNada() throws Exception {
+        Gestante gestante = gestanteAtivaComSaldo(0);
+        TipoAtendimento tipo = tipo();
+        LocalDate data = LocalDate.now().plusDays(3);
+
+        ResponseEntity<String> resposta = agendar(gestante, tipo, data, data).call();
+
+        assertEquals(409, resposta.getStatusCode().value());
+        assertEquals(PENDENTE_REPETIDO, corpo(resposta).get("message").asText());
+        assertEquals(0, pendentes(gestante));
     }
 
     // ---- Primeiro acesso ----

@@ -74,7 +74,7 @@ src/main/java/com/cozyshelf/previna/
     config/         Spring Security e Spring MVC
     email/          envio de e-mails
 src/main/resources/
-  db/migration/     migrações Flyway (V1 a V17)
+  db/migration/     migrações Flyway (V1 a V21)
   db/seed/          dados de exemplo, só no profile dev
 docs/               modelo lógico, casos de uso e diagramas de sequência (ver docs/README.md)
 ```
@@ -97,7 +97,7 @@ mvn test
   simultâneas de ponta a ponta (servidor numa porta aleatória, token JWT, filtro de segurança e controller) em que só
   uma tem efeito, a trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), a
   idempotência do resgate, o saldo alterado só por `UPDATE` atômico, as travas do primeiro acesso e das edições, o
-  rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
+  agendamento pendente único (cadastros iguais simultâneos gravam um só), o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
   aplicadas nele); sem ela, são pulados.
 
 No ambiente do `previna-development`:

@@ -24,6 +24,13 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   para ela e o histórico da gestante perderia o nome do exame. O tipo excluído some da gestão e da lista de
   escolha, e responde `404` como um inexistente. O nome volta a ficar livre: a UNIQUE `(nome, criado_por)`
   virou índice único parcial, só entre os tipos com `ativo`.
+- **Agendamento pendente único:** a gestante tem no máximo um `AGENDADO` por tipo e data prevista (índice único
+  parcial `agendamento_pendente_unico`, `V21`). Sem ele, duas requisições iguais ao mesmo tempo (duplo clique, duas
+  abas, dois médicos) gravavam dois pendentes idênticos, e cada confirmação creditava os pontos do mesmo exame. O
+  segundo cadastro, ou o item repetido na própria lista, recebe `409` "Essa gestante já tem esse exame ou consulta
+  pendente nessa data", e nada do cadastro é gravado. Não há consulta antes de gravar: as duas requisições passariam
+  juntas por ela; o índice decide. O mesmo exame em outra data continua permitido, e na mesma data também, depois que
+  o anterior saiu de `AGENDADO`. Nenhuma outra escrita volta um agendamento a `AGENDADO` ou muda gestante, tipo ou data.
 - **Crédito único por agendamento:** a resolução trava a linha do agendamento, então a segunda confirmação espera,
   encontra o desfecho já registrado e recebe `409`. `transacao_pontos.agendamento_id` é `UNIQUE` como última barreira.
 - **Saldo de pontos:** `gestante.saldo_pontos` é atualizado junto com o extrato, com a gestante travada (a mesma trava

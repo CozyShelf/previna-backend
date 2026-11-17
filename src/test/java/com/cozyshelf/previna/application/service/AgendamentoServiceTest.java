@@ -55,7 +55,7 @@ class AgendamentoServiceTest {
     void setUp() {
         when(gestanteService.gestanteDoMedico(7L, 1L)).thenReturn(gestante);
         when(medicoRepository.getReferenceById(7L)).thenReturn(medico);
-        when(agendamentoRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(agendamentoRepository.saveAllAndFlush(any())).thenAnswer(i -> i.getArgument(0));
         when(gestanteService.podeAcessar(7L, gestante)).thenReturn(true);
     }
 
@@ -81,7 +81,7 @@ class AgendamentoServiceTest {
         var resposta = service.agendar(dados(3L), 7L).getFirst();
 
         var salvos = ArgumentCaptor.forClass(List.class);
-        verify(agendamentoRepository).saveAll(salvos.capture());
+        verify(agendamentoRepository).saveAllAndFlush(salvos.capture());
         var salvo = (Agendamento) salvos.getValue().getFirst();
         assertEquals(StatusAgendamento.AGENDADO, salvo.getStatus());
         assertSame(medico, salvo.getAtribuidoPor());
@@ -103,7 +103,7 @@ class AgendamentoServiceTest {
         var resposta = service.agendar(dados(3L, 4L), 7L);
 
         var salvos = ArgumentCaptor.forClass(List.class);
-        verify(agendamentoRepository).saveAll(salvos.capture());
+        verify(agendamentoRepository).saveAllAndFlush(salvos.capture());
         assertEquals(2, salvos.getValue().size());
         assertEquals(List.of("Hemograma completo", "Consulta puerperal"),
                 resposta.stream().map(AgendamentoResponse::tipo).toList());
@@ -122,7 +122,7 @@ class AgendamentoServiceTest {
         var erro = assertThrows(DadosInvalidosException.class, () -> service.agendar(dados(3L, 99L), 7L));
 
         assertEquals("Tipo de atendimento inválido", erro.getMessage());
-        verify(agendamentoRepository, never()).saveAll(any());
+        verify(agendamentoRepository, never()).saveAllAndFlush(any());
     }
 
     @Test
@@ -133,9 +133,55 @@ class AgendamentoServiceTest {
         var erro = assertThrows(NaoEncontradoException.class, () -> service.agendar(dados(3L), 8L));
 
         assertEquals("Gestante não encontrada", erro.getMessage());
-        verify(agendamentoRepository, never()).saveAll(any());
+        verify(agendamentoRepository, never()).saveAllAndFlush(any());
         // A gestante é conferida antes dos tipos, como no diagrama: 404 vem antes de 400
         verify(tipoService, never()).paraAgendamento(any(), any());
+    }
+
+    // O índice parcial da V21 recusa o segundo pendente igual; a violação vira 409 com a mensagem própria
+    @Test
+    void pendenteRepetidoNoBancoViraConflitoComAMensagemPropria() {
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
+        var sql = new java.sql.SQLException("ERROR: duplicate key value violates unique constraint "
+                + "\"agendamento_pendente_unico\"", "23505");
+        when(agendamentoRepository.saveAllAndFlush(any())).thenThrow(new DataIntegrityViolationException(
+                "could not execute statement", new org.hibernate.exception.ConstraintViolationException(
+                        "could not execute statement", sql, "agendamento_pendente_unico")));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.agendar(dados(3L), 7L));
+
+        assertEquals("Essa gestante já tem esse exame ou consulta pendente nessa data", erro.getMessage());
+    }
+
+    // Servidor em outro idioma: o Hibernate não extrai o nome, mas ele continua entre aspas na mensagem
+    @Test
+    void pendenteRepetidoEReconhecidoPelaMensagemQuandoOHibernateNaoExtraiONome() {
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
+        var sql = new java.sql.SQLException("ERRO: duplicar valor da chave viola a restrição de unicidade "
+                + "\"agendamento_pendente_unico\"", "23505");
+        when(agendamentoRepository.saveAllAndFlush(any())).thenThrow(new DataIntegrityViolationException(
+                "could not execute statement", new org.hibernate.exception.ConstraintViolationException(
+                        "could not execute statement", sql, null)));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.agendar(dados(3L), 7L));
+
+        assertEquals("Essa gestante já tem esse exame ou consulta pendente nessa data", erro.getMessage());
+    }
+
+    // Outra violação não é engolida: segue para o 409 genérico do GlobalExceptionHandler
+    @Test
+    void outraViolacaoDeIntegridadeNaoViraAMensagemDoPendente() {
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
+        var original = new DataIntegrityViolationException("could not execute statement",
+                new org.hibernate.exception.ConstraintViolationException("could not execute statement",
+                        new java.sql.SQLException("ERROR: insert or update on table \"agendamento\" violates "
+                                + "foreign key constraint \"agendamento_gestante_id_fkey\"", "23503"),
+                        "agendamento_gestante_id_fkey"));
+        when(agendamentoRepository.saveAllAndFlush(any())).thenThrow(original);
+
+        var erro = assertThrows(DataIntegrityViolationException.class, () -> service.agendar(dados(3L), 7L));
+
+        assertSame(original, erro);
     }
 
     // Tela inicial: só o que está pendente para hoje, na ordem de cadastro (o id), com o nome da gestante

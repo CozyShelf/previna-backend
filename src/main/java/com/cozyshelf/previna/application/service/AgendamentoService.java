@@ -13,6 +13,8 @@ import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,10 @@ import java.util.List;
 
 @Service
 public class AgendamentoService {
+    // Índice parcial da V21: um AGENDADO só por gestante, tipo e data prevista
+    static final String PENDENTE_UNICO = "agendamento_pendente_unico";
+    static final String MENSAGEM_PENDENTE_REPETIDO = "Essa gestante já tem esse exame ou consulta pendente nessa data";
+
     private final TipoAtendimentoService tipoService;
     private final AgendamentoRepository agendamentoRepository;
     private final MedicoRepository medicoRepository;
@@ -41,6 +47,8 @@ public class AgendamentoService {
     // Cada item vira um agendamento independente, com status e confirmação próprios. Tudo na mesma
     // transação: um tipo inválido no meio da lista não deixa metade do cadastro gravada.
     // Nenhum ponto é creditado aqui: os pontos do tipo só saem quando o médico confirmar a realização.
+    // Repetir um pendente (mesma gestante, tipo e data) é barrado pelo índice da V21, e não por uma consulta antes:
+    // duas requisições simultâneas passariam juntas pela consulta. O item repetido na própria lista cai no mesmo índice.
     @Transactional
     public List<AgendamentoResponse> agendar(AgendamentoRequest dados, Long idMedico) {
         // A gestante é conferida antes dos tipos: 404 antes de 400, como no diagrama
@@ -51,7 +59,35 @@ public class AgendamentoService {
                 .map(item -> new Agendamento(gestante, tipoService.paraAgendamento(idMedico, item.tipoAtendimento()),
                         medico, item.dataPrevista(), item.observacao()))
                 .toList();
-        return agendamentoRepository.saveAll(novos).stream().map(AgendamentoService::resposta).toList();
+        return gravar(novos).stream().map(AgendamentoService::resposta).toList();
+    }
+
+    // O flush aqui dentro faz a violação sair deste método, e não do commit, onde viraria o 409 genérico.
+    // Só o índice do pendente vira a mensagem própria; as demais violações seguem para o GlobalExceptionHandler
+    private List<Agendamento> gravar(List<Agendamento> novos) {
+        try {
+            return agendamentoRepository.saveAllAndFlush(novos);
+        } catch (DataIntegrityViolationException e) {
+            if (violou(e, PENDENTE_UNICO)) {
+                throw new ConflitoException(MENSAGEM_PENDENTE_REPETIDO);
+            }
+            throw e;
+        }
+    }
+
+    // O nome vem do Hibernate, que o tira do texto do PostgreSQL. Com o servidor em outro idioma o extrator não
+    // reconhece o texto, mas o nome entre aspas continua na mensagem; por isso as mensagens também são conferidas
+    static boolean violou(DataIntegrityViolationException e, String restricao) {
+        for (Throwable causa = e; causa != null; causa = causa.getCause()) {
+            if (causa instanceof ConstraintViolationException violacao
+                    && restricao.equalsIgnoreCase(violacao.getConstraintName())) {
+                return true;
+            }
+            if (causa.getMessage() != null && causa.getMessage().contains("\"" + restricao + "\"")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Pendentes primeiro (a ordem do enum é a de exibição), depois pela data prevista; o id desempata.
