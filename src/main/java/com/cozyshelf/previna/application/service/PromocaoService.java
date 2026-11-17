@@ -27,6 +27,9 @@ import java.util.UUID;
 
 @Service
 public class PromocaoService {
+    // Exclusão da V23 (D12): uma promoção ativa só por empresa e categoria em cada período
+    static final String SEM_SOBREPOSICAO = "promocao_sem_sobreposicao";
+    static final String MENSAGEM_SOBREPOSTA = "Já existe promoção ativa dessa categoria nesse período";
     // Índice único da V22: cada gestante resgata uma promoção uma vez só
     static final String RESGATE_UMA_VEZ = "cupom_resgatado_promocao_uma_vez";
     static final String MENSAGEM_JA_RESGATADA = "Promoção já resgatada";
@@ -50,8 +53,10 @@ public class PromocaoService {
     @Transactional
     public PromocaoResponse cadastrar(Long idEmpresa, PromocaoRequest dados) {
         validarPeriodo(dados);
-        Promocao promocao = promocaoRepository.save(new Promocao(idEmpresa, dados.titulo(), dados.descricao(),
-                dados.desconto(), dados.dataInicio(), dados.dataFim(), dados.categoria()));
+        travarPromocoesDaEmpresa(idEmpresa);
+        Promocao promocao = new Promocao(idEmpresa, dados.titulo(), dados.descricao(), dados.desconto(),
+                dados.dataInicio(), dados.dataFim(), dados.categoria());
+        gravarSemSobreposicao(() -> promocaoRepository.saveAndFlush(promocao));
         return resposta(promocao);
     }
 
@@ -70,21 +75,52 @@ public class PromocaoService {
         return resposta(encontrar(idEmpresa, idPromocao));
     }
 
-    // Troca todos os dados; a situação (ativo) continua a mesma
+    // Troca todos os dados; a situação (ativo) continua a mesma. Mudar o período ou a categoria de uma ativa pode
+    // sobrepor outra ativa
     @Transactional
     public PromocaoResponse atualizar(Long idEmpresa, Long idPromocao, PromocaoRequest dados) {
         validarPeriodo(dados);
+        travarPromocoesDaEmpresa(idEmpresa);
         Promocao promocao = encontrarParaAtualizar(idEmpresa, idPromocao);
         promocao.atualizar(dados.titulo(), dados.descricao(), dados.desconto(), dados.dataInicio(), dados.dataFim(),
                 dados.categoria());
+        gravarSemSobreposicao(promocaoRepository::flush);
         return resposta(promocao);
     }
 
+    // Reativar pode sobrepor outra ativa; desativar nunca conflita (a exclusão só olha as ativas)
     @Transactional
     public PromocaoResponse alterarAtivo(Long idEmpresa, Long idPromocao, boolean ativo) {
+        if (ativo) {
+            travarPromocoesDaEmpresa(idEmpresa);
+        }
         Promocao promocao = encontrarParaAtualizar(idEmpresa, idPromocao);
         promocao.alterarAtivo(ativo);
+        gravarSemSobreposicao(promocaoRepository::flush);
         return resposta(promocao);
+    }
+
+    // A sobreposição é barrada pela exclusão da V23, e não por uma consulta antes: dois cadastros simultâneos
+    // passariam juntos pela consulta. O flush aqui dentro faz a violação sair deste método, e não do commit, onde
+    // viraria o 409 genérico; as demais violações seguem para o GlobalExceptionHandler
+    private static void gravarSemSobreposicao(Runnable gravacao) {
+        try {
+            gravacao.run();
+        } catch (DataIntegrityViolationException e) {
+            if (RestricoesDoBanco.violou(e, SEM_SOBREPOSICAO)) {
+                throw new ConflitoException(MENSAGEM_SOBREPOSTA);
+            }
+            throw e;
+        }
+    }
+
+    // Fila por empresa (SELECT ... FOR UPDATE na empresa) antes de gravar uma promoção ativa. A regra continua sendo a
+    // exclusão da V23; a fila só faz o perdedor receber a violação dela. Sem a fila, dois INSERTs (ou UPDATEs)
+    // sobrepostos ao mesmo tempo entram os dois no índice GiST, cada um espera o outro na conferência da exclusão e o
+    // PostgreSQL derruba um com "deadlock detected" (40P01), que viraria 500. Sempre antes da trava da promoção, na
+    // mesma ordem em todos os caminhos
+    private void travarPromocoesDaEmpresa(Long idEmpresa) {
+        empresaRepository.findByIdParaAtualizar(idEmpresa);
     }
 
     // Promoção de outra empresa responde como inexistente

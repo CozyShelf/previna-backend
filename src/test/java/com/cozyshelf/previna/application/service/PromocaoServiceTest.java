@@ -46,12 +46,12 @@ class PromocaoServiceTest {
 
     @Test
     void cadastraParaACategoriaNaEmpresaDoToken() {
-        when(promocaoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(promocaoRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
 
         var resposta = service.cadastrar(1L, dados(HOJE, HOJE.plusDays(7)));
 
         var salva = ArgumentCaptor.forClass(Promocao.class);
-        verify(promocaoRepository).save(salva.capture());
+        verify(promocaoRepository).saveAndFlush(salva.capture());
         assertEquals(Categoria.FRALDAS, salva.getValue().getCategoria());
         assertEquals(Categoria.FRALDAS, resposta.categoria());
         assertTrue(resposta.ativo());
@@ -59,7 +59,7 @@ class PromocaoServiceTest {
 
     @Test
     void aceitaPromocaoDeUmDiaSo() {
-        when(promocaoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(promocaoRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
 
         assertEquals(HOJE, service.cadastrar(1L, dados(HOJE, HOJE)).dataFim());
     }
@@ -118,13 +118,62 @@ class PromocaoServiceTest {
     @Test
     void recusaFimAntesDoInicio() {
         assertThrows(DadosInvalidosException.class, () -> service.cadastrar(1L, dados(HOJE.plusDays(7), HOJE.plusDays(6))));
-        verify(promocaoRepository, never()).save(any());
+        verify(promocaoRepository, never()).saveAndFlush(any());
     }
+
+    // ---- Sobreposição (exclusão promocao_sem_sobreposicao, V23) ----
 
     // A violação como o banco a devolve: o nome da restrição entre aspas na mensagem
     private static DataIntegrityViolationException violacao(String restricao) {
         return new DataIntegrityViolationException("could not execute statement",
                 new RuntimeException("ERROR: conflicting key value violates exclusion constraint \"" + restricao + "\""));
+    }
+
+    private static final String SOBREPOSTA = "Já existe promoção ativa dessa categoria nesse período";
+
+    @Test
+    void cadastroSobrepostoResponde409ComAMensagem() {
+        when(promocaoRepository.saveAndFlush(any())).thenThrow(violacao("promocao_sem_sobreposicao"));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.cadastrar(1L, dados(HOJE, HOJE)));
+        assertEquals(SOBREPOSTA, erro.getMessage());
+    }
+
+    @Test
+    void edicaoEReativacaoSobrepostasRespondem409() {
+        var promocao = new Promocao(1L, "Antiga", null, BigDecimal.TEN, HOJE, HOJE, Categoria.ROUPAS);
+        when(promocaoRepository.findByIdAndEmpresaIdParaAtualizar(5L, 1L)).thenReturn(Optional.of(promocao));
+        doThrow(violacao("promocao_sem_sobreposicao")).when(promocaoRepository).flush();
+
+        assertEquals(SOBREPOSTA, assertThrows(ConflitoException.class,
+                () -> service.atualizar(1L, 5L, dados(HOJE, HOJE.plusDays(7)))).getMessage());
+        assertEquals(SOBREPOSTA, assertThrows(ConflitoException.class,
+                () -> service.alterarAtivo(1L, 5L, true)).getMessage());
+    }
+
+    // Cadastrar, editar e ativar entram na fila da empresa antes de gravar; desativar nunca conflita e não entra
+    @Test
+    void soQuemPodeSobreporEntraNaFilaDaEmpresa() {
+        var promocao = new Promocao(1L, "Antiga", null, BigDecimal.TEN, HOJE, HOJE, Categoria.ROUPAS);
+        when(promocaoRepository.findByIdAndEmpresaIdParaAtualizar(5L, 1L)).thenReturn(Optional.of(promocao));
+        when(promocaoRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.alterarAtivo(1L, 5L, false);
+        verify(empresaRepository, never()).findByIdParaAtualizar(any());
+
+        service.cadastrar(1L, dados(HOJE, HOJE));
+        service.atualizar(1L, 5L, dados(HOJE, HOJE));
+        service.alterarAtivo(1L, 5L, true);
+        verify(empresaRepository, times(3)).findByIdParaAtualizar(1L);
+    }
+
+    @Test
+    void outraViolacaoSegueParaOTratamentoGenerico() {
+        var outra = violacao("promocao_empresa_id_fkey");
+        when(promocaoRepository.saveAndFlush(any())).thenThrow(outra);
+
+        assertSame(outra, assertThrows(DataIntegrityViolationException.class,
+                () -> service.cadastrar(1L, dados(HOJE, HOJE))));
     }
 
     // ---- Resgate pela gestante ----
