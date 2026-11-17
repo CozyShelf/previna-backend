@@ -34,7 +34,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -167,7 +169,7 @@ class ResgateCupomControllerTest {
 
     @Test
     void resgataComAGestanteDoTokenIgnorandoOutraNoCorpoOuNaQuery() throws Exception {
-        when(cupomService.resgatar(5L, 7L)).thenReturn(resgatado(300));
+        when(cupomService.resgatar(5L, 7L, null)).thenReturn(new CupomService.Resgate(resgatado(300), false));
 
         mvc.perform(post("/cupons/5/resgatar?idGestante=99&gestante=99")
                         .header("Authorization", tokenGestante(7L))
@@ -178,8 +180,46 @@ class ResgateCupomControllerTest {
                 .andExpect(jsonPath("$.saldo").value(300))
                 .andExpect(jsonPath("$.pontosGastos").value(100));
 
-        verify(cupomService).resgatar(5L, 7L);
-        verify(cupomService, never()).resgatar(anyLong(), eq(99L));
+        verify(cupomService).resgatar(5L, 7L, null);
+        verify(cupomService, never()).resgatar(anyLong(), eq(99L), any());
+    }
+
+    // ---- Idempotency-Key: o duplo toque no app ----
+
+    private static final String CHAVE = "3f1c9a52-7d0e-4b8a-9c61-2e5f4a7b8d90";
+
+    @Test
+    void chaveNovaResgataCom201EPassaAChaveAoServico() throws Exception {
+        when(cupomService.resgatar(5L, 7L, UUID.fromString(CHAVE)))
+                .thenReturn(new CupomService.Resgate(resgatado(300), false));
+
+        mvc.perform(post("/cupons/5/resgatar").header("Authorization", tokenGestante(7L))
+                        .header("Idempotency-Key", CHAVE))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.saldo").value(300));
+    }
+
+    @Test
+    void chaveRepetidaResponde200ComOMesmoResgate() throws Exception {
+        when(cupomService.resgatar(5L, 7L, UUID.fromString(CHAVE)))
+                .thenReturn(new CupomService.Resgate(resgatado(300), true));
+
+        mvc.perform(post("/cupons/5/resgatar").header("Authorization", tokenGestante(7L))
+                        .header("Idempotency-Key", CHAVE.toUpperCase()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value("ABCD2345"))
+                .andExpect(jsonPath("$.saldo").value(300));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "abc", "1-2-3-4-5", "3f1c9a52-7d0e-4b8a-9c61-2e5f4a7b8d9", "3f1c9a527d0e4b8a9c612e5f4a7b8d90",
+            "3f1c9a52-7d0e-4b8a-9c61-2e5f4a7b8d90 ", "zzzzzzzz-7d0e-4b8a-9c61-2e5f4a7b8d90"})
+    void chaveQueNaoEUuidResponde400SemChegarAoServico(String chave) throws Exception {
+        mvc.perform(post("/cupons/5/resgatar").header("Authorization", tokenGestante(7L))
+                        .header("Idempotency-Key", chave))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Idempotency-Key deve ser um UUID"));
+        verifyNoInteractions(cupomService);
     }
 
     @Test
@@ -201,7 +241,7 @@ class ResgateCupomControllerTest {
 
     @Test
     void cupomInexistenteResponde404ComAMensagem() throws Exception {
-        when(cupomService.resgatar(999L, 7L)).thenThrow(new NaoEncontradoException("Cupom não encontrado"));
+        when(cupomService.resgatar(999L, 7L, null)).thenThrow(new NaoEncontradoException("Cupom não encontrado"));
 
         mvc.perform(post("/cupons/999/resgatar").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isNotFound())
@@ -211,7 +251,7 @@ class ResgateCupomControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"Cupom indisponível", "Pontos insuficientes"})
     void regraVioladaResponde409ComAMensagem(String mensagem) throws Exception {
-        when(cupomService.resgatar(5L, 7L)).thenThrow(new ConflitoException(mensagem));
+        when(cupomService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem));
 
         mvc.perform(post("/cupons/5/resgatar").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isConflict())

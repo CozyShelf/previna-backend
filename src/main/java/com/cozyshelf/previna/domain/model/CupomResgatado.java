@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 // Cupom trocado pela gestante. Guarda uma cópia do cupom no momento do resgate (produto, empresa, desconto, validade
 // e pontos): a empresa pode editar o cupom ou renomear o produto depois sem mudar o que a gestante resgatou.
@@ -31,6 +32,10 @@ public class CupomResgatado {
     private LocalDateTime dataResgate;
     private LocalDateTime dataUso;
 
+    // Chave que o app manda a cada confirmação de resgate (header Idempotency-Key); nula nos resgates de versões
+    // antigas do app. Única por gestante: o toque repetido devolve este resgate em vez de fazer outro
+    private UUID chaveIdempotencia;
+
     // ---- Cópia do cupom no momento do resgate ----
     private Long produtoId;
     private String produtoNome;
@@ -44,8 +49,10 @@ public class CupomResgatado {
     protected CupomResgatado() {
     }
 
-    public CupomResgatado(Cupom cupom, EmpresaParceira empresa, Gestante gestante, String codigo) {
+    public CupomResgatado(Cupom cupom, EmpresaParceira empresa, Gestante gestante, String codigo,
+                          UUID chaveIdempotencia) {
         this.cupom = cupom;
+        this.chaveIdempotencia = chaveIdempotencia;
         this.gestante = gestante;
         this.codigo = codigo;
         this.status = StatusCupomResgatado.ATIVO;
@@ -85,6 +92,10 @@ public class CupomResgatado {
 
     public LocalDateTime getDataUso() {
         return dataUso;
+    }
+
+    public UUID getChaveIdempotencia() {
+        return chaveIdempotencia;
     }
 
     public Long getProdutoId() {

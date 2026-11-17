@@ -4,13 +4,33 @@ title Resgate de cupom pela gestante
 |CupomController|
 start
 :POST /cupons/{id}/resgatar
-@PreAuthorize GESTANTE;
+@PreAuthorize GESTANTE
+(header Idempotency-Key opcional);
+if (Idempotency-Key presente e não é UUID?) then (sim)
+  :400 Bad Request;
+  stop
+else (não)
+endif
 
 |CupomService|
 :busca o cupom;
 if (inexistente?) then (sim)
   |CupomController|
   :404 Not Found;
+  stop
+else (não)
+endif
+
+|PontuacaoService|
+:trava a gestante
+(SELECT ... FOR UPDATE);
+
+|CupomService|
+if (já existe cupom_resgatado da gestante
+com a mesma Idempotency-Key?) then (sim)
+  |CupomController|
+  :200 OK (o mesmo resgate,
+  com o saldo atual; sem novo débito);
   stop
 else (não)
 endif
@@ -24,8 +44,8 @@ else (não)
 endif
 
 |PontuacaoService|
-:consulta gestante.saldo_pontos
-(gestante bloqueada);
+:confere gestante.saldo_pontos
+(da linha travada);
 if (saldo < cupom.pontos_necessarios?) then (sim)
   |CupomController|
   :409 "Pontos insuficientes";
@@ -36,12 +56,16 @@ endif
 |CupomService|
 :gera código único;
 :insere cupom_resgatado
-(codigo, status = ATIVO, data_resgate);
+(codigo, status = ATIVO, data_resgate,
+chave_idempotencia);
 
 |PontuacaoService|
 :insere transacao_pontos
 (tipo = DEBITO, pontos_necessarios, cupom resgatado);
-:gestante.saldo_pontos -= pontos_necessarios;
+:UPDATE gestante SET saldo_pontos =
+saldo_pontos - pontos_necessarios
+WHERE saldo_pontos >= pontos_necessarios
+(nenhuma linha: 409 "Pontos insuficientes");
 
 |CupomController|
 :201 Created (código e novo saldo);
@@ -51,6 +75,14 @@ note right
   Tudo na mesma transação, com a gestante
   bloqueada (SELECT ... FOR UPDATE):
   dois resgates simultâneos não passam do saldo.
+  O duplo toque no app manda a mesma
+  Idempotency-Key: o segundo espera na trava
+  e recebe o resgate do primeiro. O UNIQUE
+  (gestante_id, chave_idempotencia) é a
+  última barreira; sem a chave (versões
+  antigas do app), cada chamada é um resgate.
+  O saldo só muda por UPDATE atômico, e o
+  CHECK saldo_pontos >= 0 é a última barreira.
   O cupom não tem quantidade: a empresa
   o tira do ar desativando-o.
 end note

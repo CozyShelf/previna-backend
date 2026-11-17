@@ -19,6 +19,10 @@ public class Gestante extends Usuario {
     private String telefone;
     private LocalDate dum;
     private LocalDate dataProvavelParto;
+    // Fora do UPDATE da entidade: quem muda o saldo é o PontuacaoService, com UPDATE atômico no banco. Gravada
+    // inteira, uma edição de perfil sobrescrevia com o saldo lido no começo um crédito comitado no meio dela.
+    // O insert continua gravando o 0 inicial.
+    @Column(updatable = false)
     private int saldoPontos;
     private boolean consentimentoLgpd;
     private LocalDateTime dataConsentimento;
@@ -63,7 +67,8 @@ public class Gestante extends Usuario {
         return saldoPontos;
     }
 
-    // Total mantido junto com o extrato (transacao_pontos): quem credita é o PontuacaoService, na confirmação
+    // Total mantido junto com o extrato (transacao_pontos): quem credita é o PontuacaoService, na confirmação.
+    // Só acompanha em memória o que o UPDATE atômico já fez no banco, para a resposta mostrar o saldo novo
     public void creditarPontos(int pontos) {
         this.saldoPontos += pontos;
     }
@@ -82,7 +87,8 @@ public class Gestante extends Usuario {
         this.senhaTemporaria = null;
     }
 
-    // Quem debita é o CupomService, no resgate, com a gestante travada e o saldo já conferido
+    // Quem debita é o PontuacaoService, no resgate, com a gestante travada e o saldo já conferido; como no crédito,
+    // só acompanha em memória o UPDATE atômico
     public void debitarPontos(int pontos) {
         if (pontos > saldoPontos) {
             throw new IllegalStateException("Saldo de pontos insuficiente");

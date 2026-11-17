@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.ExtratoRequest;
+import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
 import com.cozyshelf.previna.domain.model.Agendamento;
@@ -68,6 +69,8 @@ class PontuacaoServiceTest {
         assertEquals(38, service.creditarPorAgendamento(agendamento));
 
         assertEquals(38, gestante.getSaldoPontos());
+        // A soma vai para o banco num UPDATE atômico; a entidade não grava o saldo
+        verify(gestanteRepository).creditarPontos(1L, 38);
         var salva = ArgumentCaptor.forClass(TransacaoPontos.class);
         verify(transacaoRepository).save(salva.capture());
         assertEquals(TipoTransacao.CREDITO, salva.getValue().getTipo());
@@ -133,10 +136,11 @@ class PontuacaoServiceTest {
     @Test
     void debitaDoSaldoERegistraODebitoApontandoParaOCupomResgatado() {
         Campos.definir(gestante, "saldoPontos", 500);
+        when(gestanteRepository.debitarPontos(1L, 200)).thenReturn(1);
         var fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
         var empresa = new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash");
         var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), empresa,
-                gestante, "ABCD2345");
+                gestante, "ABCD2345", null);
 
         assertEquals(300, service.debitarPontos(gestante, 200, resgatado));
 
@@ -147,6 +151,23 @@ class PontuacaoServiceTest {
         assertSame(resgatado, salva.getValue().getCupomResgatado());
         assertEquals("Cupom: 10% de desconto em Fralda RN", salva.getValue().getDescricao());
         assertEquals(300, gestante.getSaldoPontos());
+        verify(gestanteRepository).debitarPontos(1L, 200);
+    }
+
+    // O UPDATE confere o saldo no banco: sem linha alterada, o resgate é recusado (e a transação desfeita)
+    @Test
+    void debitoSemSaldoNoBancoRecusaComPontosInsuficientes() {
+        Campos.definir(gestante, "saldoPontos", 500);
+        var fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
+        var empresa = new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash");
+        var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), empresa,
+                gestante, "ABCD2345", null);
+        when(gestanteRepository.debitarPontos(1L, 200)).thenReturn(0);
+
+        var erro = assertThrows(ConflitoException.class, () -> service.debitarPontos(gestante, 200, resgatado));
+
+        assertEquals("Pontos insuficientes", erro.getMessage());
+        assertEquals(500, gestante.getSaldoPontos());
     }
 
     @Test

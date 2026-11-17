@@ -78,7 +78,7 @@ class EmpresaServiceTest {
 
     @Test
     void trocaCredenciaisCompletaCadastroEAtivaConta() {
-        when(empresaRepository.findById(1L)).thenReturn(Optional.of(empresa));
+        when(empresaRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(empresa));
 
         service.concluirPrimeiroAcesso(1L, primeiroAcesso("bemnascer", "novaSenha1"), null);
 
@@ -90,7 +90,7 @@ class EmpresaServiceTest {
 
     @Test
     void recusaLoginEmUso() {
-        when(empresaRepository.findById(1L)).thenReturn(Optional.of(empresa));
+        when(empresaRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(empresa));
         when(usuarioRepository.existsByLogin("medico")).thenReturn(true);
 
         assertThrows(ConflitoException.class,
@@ -101,7 +101,7 @@ class EmpresaServiceTest {
 
     @Test
     void recusaSegundoPrimeiroAcesso() {
-        when(empresaRepository.findById(1L)).thenReturn(Optional.of(empresa));
+        when(empresaRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(empresa));
         service.concluirPrimeiroAcesso(1L, primeiroAcesso("bemnascer", "novaSenha1"), null);
 
         assertThrows(ConflitoException.class,
@@ -110,7 +110,7 @@ class EmpresaServiceTest {
 
     @Test
     void guardaLogoEnviado() {
-        when(empresaRepository.findById(1L)).thenReturn(Optional.of(empresa));
+        when(empresaRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(empresa));
 
         service.concluirPrimeiroAcesso(1L, primeiroAcesso("bemnascer", "novaSenha1"), arquivo("89504e470d0a1a0a"));
 
@@ -123,7 +123,7 @@ class EmpresaServiceTest {
 
     @Test
     void recusaArquivoQueNaoEImagemSemConcluirPrimeiroAcesso() {
-        when(empresaRepository.findById(1L)).thenReturn(Optional.of(empresa));
+        when(empresaRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(empresa));
 
         // SVG declarado como PNG pelo navegador
         assertThrows(DadosInvalidosException.class, () -> service.concluirPrimeiroAcesso(1L,
@@ -160,7 +160,7 @@ class EmpresaServiceTest {
     // Token temporário de outro tipo de conta (ou de conta que não existe mais): 404, e não 500
     @Test
     void primeiroAcessoDeContaQueNaoEDesteTipoResponde404() {
-        when(empresaRepository.findById(99L)).thenReturn(Optional.empty());
+        when(empresaRepository.findByIdParaAtualizar(99L)).thenReturn(Optional.empty());
 
         var erro = assertThrows(NaoEncontradoException.class,
                 () -> service.concluirPrimeiroAcesso(99L, primeiroAcesso("bemnascer", "novaSenha1"), null));

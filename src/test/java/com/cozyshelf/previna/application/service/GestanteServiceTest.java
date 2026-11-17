@@ -59,6 +59,7 @@ class GestanteServiceTest {
     @BeforeEach
     void setUp() {
         when(gestanteRepository.findById(1L)).thenReturn(Optional.of(gestante));
+        when(gestanteRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(gestante));
     }
 
     private static PrimeiroAcessoRequest primeiroAcesso(String login, String senha) {
@@ -89,8 +90,18 @@ class GestanteServiceTest {
     void recusaSegundoPrimeiroAcesso() {
         service.concluirPrimeiroAcesso(1L, primeiroAcesso("maria.silva", "novaSenha1"), null);
 
-        assertThrows(ConflitoException.class,
+        var erro = assertThrows(ConflitoException.class,
                 () -> service.concluirPrimeiroAcesso(1L, primeiroAcesso("outro.login", "outraSenha2"), null));
+        assertEquals("Primeiro acesso já concluído", erro.getMessage());
+    }
+
+    // A conta é lida travada: a segunda conclusão simultânea espera a primeira e cai no "já concluído"
+    @Test
+    void primeiroAcessoLeAContaTravada() {
+        service.concluirPrimeiroAcesso(1L, primeiroAcesso("maria.silva", "novaSenha1"), null);
+
+        verify(gestanteRepository).findByIdParaAtualizar(1L);
+        verify(gestanteRepository, never()).findById(any());
     }
 
     // O médico reconsulta as credenciais temporárias até a gestante concluir o primeiro acesso
@@ -104,6 +115,7 @@ class GestanteServiceTest {
         ArgumentCaptor<Gestante> salva = ArgumentCaptor.forClass(Gestante.class);
         verify(gestanteRepository).save(salva.capture());
         when(gestanteRepository.findById(1L)).thenReturn(Optional.of(salva.getValue()));
+        when(gestanteRepository.findByIdParaAtualizar(1L)).thenReturn(Optional.of(salva.getValue()));
         when(gestanteRepository.findByIdAndMedicoId(1L, 7L)).thenReturn(Optional.of(salva.getValue()));
 
         assertEquals(credenciais, service.buscarDetalhe(7L, 1L).credenciaisTemporarias());
@@ -401,7 +413,7 @@ class GestanteServiceTest {
     // Token temporário de outro tipo de conta (ou de conta que não existe mais): 404, e não 500
     @Test
     void primeiroAcessoDeContaQueNaoEDesteTipoResponde404() {
-        when(gestanteRepository.findById(99L)).thenReturn(Optional.empty());
+        when(gestanteRepository.findByIdParaAtualizar(99L)).thenReturn(Optional.empty());
 
         var erro = assertThrows(NaoEncontradoException.class,
                 () -> service.concluirPrimeiroAcesso(99L, primeiroAcesso("maria.silva", "novaSenha1"), null));

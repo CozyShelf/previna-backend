@@ -131,7 +131,9 @@ public class GestanteService {
 
     @Transactional
     public void concluirPrimeiroAcesso(Long idGestante, PrimeiroAcessoRequest dados, MultipartFile foto) {
-        Gestante gestante = gestanteRepository.findById(idGestante)
+        // Trava a linha: duas conclusões simultâneas liam a conta pendente e as duas passavam, a última gravando as
+        // suas credenciais. Assim a segunda espera a primeira comitar e cai no "já concluído"
+        Gestante gestante = gestanteRepository.findByIdParaAtualizar(idGestante)
                 .orElseThrow(() -> new NaoEncontradoException("Gestante não encontrada"));
         if (!gestante.primeiroAcessoPendente()) {
             throw new ConflitoException("Primeiro acesso já concluído");

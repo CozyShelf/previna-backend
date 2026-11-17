@@ -44,17 +44,25 @@ App --> Gestante : Exibe cupons (desconto, pontos, validade) e promoções
 Gestante -> App : Seleciona cupom e solicita resgate
 App --> Gestante : Solicita confirmação
 Gestante -> App : Confirma resgate
-App -> Controller : POST /cupons/{id}/resgatar
-Controller -> Service : resgatarCupom(idCupom, idGestante do token)
+App -> Controller : POST /cupons/{id}/resgatar\n(Idempotency-Key: UUID novo a cada confirmação)
+Controller -> Service : resgatarCupom(idCupom, idGestante do token, chave)
 Service -> BD : buscarCupom(idCupom)
 BD --> Service : cupom
-Service -> Pontuacao : consultarSaldo(idGestante)
-Pontuacao --> Service : saldo
+Service -> Pontuacao : travarGestante(idGestante)
+Pontuacao --> Service : gestante (com o saldo)
 
-alt cupom inexistente
+alt Idempotency-Key presente e não é um UUID
+    Controller --> App : 400 Bad Request
+else cupom inexistente
     Service --> Controller : Erro: cupom não encontrado
     Controller --> App : 404 Not Found
     App --> Gestante : Exibe "Cupom não encontrado"
+else já há resgate da gestante com a mesma chave (toque repetido)
+    Service -> BD : buscarResgate(idGestante, chave)
+    BD --> Service : cupom resgatado antes
+    Service --> Controller : o mesmo cupom resgatado, com o saldo atual
+    Controller --> App : 200 OK
+    App --> Gestante : Exibe código do cupom e saldo
 else cupom desativado pela empresa ou fora da validade
     Service --> Controller : Erro: cupom indisponível
     Controller --> App : 409 Conflict
@@ -65,11 +73,11 @@ else saldo menor que os pontos necessários
     App --> Gestante : Exibe "Pontos insuficientes"
 else resgate válido
     Service -> Service : gerarCodigoUnico()
-    Service -> BD : salvarCupomResgatado(idGestante, idCupom, codigo, status = ATIVO,\n cópia de produto, empresa, desconto, validade e pontos)
+    Service -> BD : salvarCupomResgatado(idGestante, idCupom, codigo, status = ATIVO, chave,\n cópia de produto, empresa, desconto, validade e pontos)
     BD --> Service : cupom resgatado
     Service -> Pontuacao : debitarPontos(idGestante, pontosNecessarios, idCupomResgatado)
     Pontuacao -> BD : registrarTransacao(tipo = DEBITO, pontos, idCupomResgatado)
-    Pontuacao -> BD : atualizarSaldo(idGestante, -pontos)
+    Pontuacao -> BD : UPDATE saldo_pontos = saldo_pontos - pontos\n WHERE saldo_pontos >= pontos
     Pontuacao --> Service : novo saldo
     Service --> Controller : cupom resgatado + código
     Controller --> App : 201 Created
@@ -80,6 +88,8 @@ note over Gestante, BD
     Débito, transação e cupom resgatado na mesma transação, com a gestante bloqueada (SELECT ... FOR UPDATE):
     dois resgates simultâneos não passam do saldo. O cupom não tem quantidade: a empresa o tira do ar desativando-o.
     O cupom resgatado guarda uma cópia do cupom: editá-lo depois não muda o resgate nem o extrato.
+    O duplo toque manda a mesma Idempotency-Key: o segundo espera na trava e recebe o resgate do primeiro, sem
+    novo débito (UNIQUE (gestante_id, chave_idempotencia) como última barreira). Sem a chave, cada chamada resgata.
 end note
 
 @enduml

@@ -92,9 +92,12 @@ mvn test
 - **Controller** (`@WebMvcTest`, com a `SecurityConfig` e o filtro JWT de verdade). `MatrizAutorizacaoTest` confere
   cada rota contra os perfis possíveis (anônimo, administrador, médico, gestante, empresa e os dois primeiros acessos)
   e falha se aparecer rota nova fora da matriz: ao criar um endpoint, adicione uma linha em `ROTAS`.
-- **Integração com PostgreSQL** (`ResgateCupomIntegracaoTest`, `FiltrosIntegracaoTest`, `OfertaIntegracaoTest`): a
-  trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), o rollback, a consulta por validade, a busca sem
-  acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
+- **Integração com PostgreSQL** (`ResgateCupomIntegracaoTest`, `CondicoesDeCorridaIntegracaoTest`,
+  `RequisicoesSimultaneasHttpIntegracaoTest`, `FiltrosIntegracaoTest`, `OfertaIntegracaoTest`): duas requisições HTTP
+  simultâneas de ponta a ponta (servidor numa porta aleatória, token JWT, filtro de segurança e controller) em que só
+  uma tem efeito, a trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), a
+  idempotência do resgate, o saldo alterado só por `UPDATE` atômico, as travas do primeiro acesso e das edições, o
+  rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
   aplicadas nele); sem ela, são pulados.
 
 No ambiente do `previna-development`:

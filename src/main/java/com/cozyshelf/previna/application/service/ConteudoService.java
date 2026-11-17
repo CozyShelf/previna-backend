@@ -54,7 +54,7 @@ public class ConteudoService {
     public ConteudoResponse atualizar(Long idConteudo, ConteudoRequest dados, MultipartFile imagem) {
         Optional<Imagem> arquivo = Imagem.de(imagem);
         exigirArquivoSoNaFoto(dados.tipo(), arquivo.isPresent());
-        ConteudoInformativo conteudo = encontrar(idConteudo);
+        ConteudoInformativo conteudo = encontrarParaAtualizar(idConteudo);
 
         String midiaUrl = texto(dados.midiaUrl());
         exigirEnderecoDeLink(midiaUrl);
@@ -80,15 +80,16 @@ public class ConteudoService {
     // Publicar ou despublicar. Despublicar tira o conteúdo do app sem apagá-lo
     @Transactional
     public ConteudoResponse alterarPublicacao(Long idConteudo, boolean publicado) {
-        ConteudoInformativo conteudo = encontrar(idConteudo);
+        ConteudoInformativo conteudo = encontrarParaAtualizar(idConteudo);
         conteudo.alterarPublicacao(publicado);
         return resposta(conteudo);
     }
 
     @Transactional
     public void excluir(Long idConteudo) {
-        // A imagem sai junto, pelo ON DELETE CASCADE da migração V13
-        conteudoRepository.delete(encontrar(idConteudo));
+        // A imagem sai junto, pelo ON DELETE CASCADE da migração V13. Travado: excluir durante uma edição espera
+        // a edição terminar, em vez de a edição falhar depois ao gravar uma linha que não existe mais
+        conteudoRepository.delete(encontrarParaAtualizar(idConteudo));
     }
 
     @Transactional(readOnly = true)
@@ -168,6 +169,12 @@ public class ConteudoService {
 
     private ConteudoInformativo encontrar(Long idConteudo) {
         return conteudoRepository.findById(idConteudo)
+                .orElseThrow(() -> new NaoEncontradoException("Conteúdo não encontrado"));
+    }
+
+    // Travado até o fim da transação: quem grava o conteúdo espera quem já o está alterando
+    private ConteudoInformativo encontrarParaAtualizar(Long idConteudo) {
+        return conteudoRepository.findByIdParaAtualizar(idConteudo)
                 .orElseThrow(() -> new NaoEncontradoException("Conteúdo não encontrado"));
     }
 
