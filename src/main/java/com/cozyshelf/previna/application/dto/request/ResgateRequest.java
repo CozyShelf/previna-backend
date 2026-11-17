@@ -3,6 +3,7 @@ package com.cozyshelf.previna.application.dto.request;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
 import com.cozyshelf.previna.domain.model.TipoResgate;
+import com.cozyshelf.previna.domain.repository.Filtros;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -24,8 +25,9 @@ public record ResgateRequest(
         return new ListagemRequest(busca, pagina, tamanho).semOrdem();
     }
 
-    // Padrão do LIKE em minúsculas, ou nulo sem busca (em branco também não restringe)
+    // Padrão do LIKE em minúsculas, com %, _ e \ escapados como na busca das ofertas, ou nulo sem busca (em branco
+    // também não restringe)
     public String padraoBusca() {
-        return busca == null || busca.isBlank() ? null : "%" + busca.trim().toLowerCase() + "%";
+        return busca == null || busca.isBlank() ? null : Filtros.padraoContem(busca.trim());
     }
 }

@@ -55,9 +55,22 @@ public final class Filtros {
         };
     }
 
-    // O campo tem o trecho, sem diferenciar maiúsculas nem acentos
+    // O campo tem o trecho, sem diferenciar maiúsculas nem acentos. %, _ e \ do trecho são texto, não curinga
     static Predicate contem(CriteriaBuilder cb, Expression<String> campo, String trecho) {
-        return cb.like(semAcento(cb, cb.lower(campo)), semAcento(cb, cb.literal("%" + trecho.toLowerCase() + "%")));
+        return cb.like(semAcento(cb, cb.lower(campo)), semAcento(cb, cb.literal(padraoContem(trecho))), ESCAPE);
+    }
+
+    // Caractere de escape dos padrões de padraoContem; quem monta o LIKE em JPQL usa "escape '\'"
+    public static final char ESCAPE = '\\';
+
+    // Padrão '%trecho%' em minúsculas para LIKE ... ESCAPE '\', com %, _ e a própria \ escapados: o termo digitado é
+    // procurado literalmente ("50%" acha "Desconto de 50%", e não tudo que tem "50"; "_" não casa qualquer caractere)
+    public static String padraoContem(String trecho) {
+        String literal = trecho.toLowerCase()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return "%" + literal + "%";
     }
 
     // Função da extensão unaccent (migration V6)

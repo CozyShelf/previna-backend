@@ -56,13 +56,15 @@ public interface CupomResgatadoRepository extends JpaRepository<CupomResgatado, 
     // (unaccent é a função da extensão da V6; os casts dizem ao Hibernate que ela recebe e devolve texto, senão a busca
     // nula iria ao banco como bytea)
     String BUSCA = "cast(function('unaccent', cast(:busca as String)) as String)";
+    // %, _ e \ do termo vêm escapados (Filtros.padraoContem): são procurados como texto, não como curinga
+    String ESCAPE_BUSCA = " escape '\\'";
     String FILTROS = " and (:tipo is null or r.tipo = :tipo)"
             + " and (:status is null or r.status = :status)"
             + " and (:categoria is null or " + CATEGORIA + " = :categoria)"
             + " and (:busca is null"
-            + " or cast(function('unaccent', lower(r.empresaNome)) as String) like " + BUSCA
-            + " or cast(function('unaccent', lower(r.produtoNome)) as String) like " + BUSCA
-            + " or cast(function('unaccent', lower(r.titulo)) as String) like " + BUSCA + ")";
+            + " or cast(function('unaccent', lower(r.empresaNome)) as String) like " + BUSCA + ESCAPE_BUSCA
+            + " or cast(function('unaccent', lower(r.produtoNome)) as String) like " + BUSCA + ESCAPE_BUSCA
+            + " or cast(function('unaccent', lower(r.titulo)) as String) like " + BUSCA + ESCAPE_BUSCA + ")";
     // ATIVO primeiro; UTILIZADO e EXPIRADO juntos depois. Em cada grupo, do resgate mais recente; o id desempata, e
     // nenhum resgate aparece em duas páginas
     String ORDEM = " order by case when r.status = " + ATIVO + " then 0 else 1 end, r.dataResgate desc, r.id desc";

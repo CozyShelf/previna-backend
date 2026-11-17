@@ -97,6 +97,16 @@ class ResgateServiceTest {
     }
 
     @Test
+    void buscaEscapaOsCuringasDoLike() {
+        when(repository.daGestante(eq(7L), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+
+        service.listar(7L, new ResgateRequest("50%_A\\b", null, null, null, null, null));
+
+        // %, _ e \ são texto: vão escapados com \ para o LIKE ... ESCAPE '\'
+        verify(repository).daGestante(eq(7L), isNull(), isNull(), isNull(), eq("%50\\%\\_a\\\\b%"), any());
+    }
+
+    @Test
     void buscaEmBrancoNaoRestringe() {
         when(repository.daGestante(eq(7L), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
 

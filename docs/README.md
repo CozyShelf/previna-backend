@@ -73,6 +73,9 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   total. Na resposta, `titulo` é a frase do desconto no cupom ("10% de desconto em Fralda RN") e o título na promoção;
   na promoção `produto` é nulo e `pontosGastos` é 0; `dataUso` é nula até a validação. Os nulos vão no JSON. Resgate
   de outra gestante responde `404` "Resgate não encontrado", igual ao inexistente, para não revelar ids.
+- **Busca literal:** em todas as buscas por texto (listagens do portal, `/ofertas` e `/gestantes/cupons`), `%`, `_` e
+  `\` digitados são procurados como texto: `Filtros.padraoContem` os escapa e o `LIKE` usa `ESCAPE '\'`. Buscar
+  "50%" acha "Fralda 50% off", e não tudo que tem "50"; "_" não casa qualquer caractere.
 - **Expiração na leitura:** não há tarefa agendada; antes de listar, os resgates `ATIVO` vencidos
   (`data_validade < hoje`; a validade vale até o fim do dia) da gestante viram `EXPIRADO`, e antes do detalhe, só o
   resgate pedido. É um `UPDATE` só, condicionado a `status = 'ATIVO'`, sem ler as linhas antes para decidir: a

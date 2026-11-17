@@ -462,6 +462,29 @@ class CupomResgatadoIntegracaoTest {
         assertTrue(ids(busca("inexistente")).isEmpty());
     }
 
+    // % e _ digitados são texto, não curinga do LIKE: "50%" não acha tudo que tem "50", e "_" não casa qualquer
+    // caractere. Vale para o nome do produto, o título da promoção e o nome da empresa
+    @Test
+    void buscaTrataPorcentagemESublinhadoComoTexto() {
+        EmpresaParceira loja = empresa("Loja");
+        EmpresaParceira sublinhado = empresa("Loja_Bebe");
+        CupomResgatado cinquentaPorCento = cupom(produto(loja, "Fralda 50% off", Categoria.FRALDAS),
+                HOJE.plusDays(5));
+        cupom(produto(loja, "Fralda 500 unidades", Categoria.FRALDAS), HOJE.plusDays(5));
+        CupomResgatado promocao = promocao(loja, "Leve 3, pague 2 (33%)", Categoria.ROUPAS, HOJE.plusDays(5));
+        promocao(loja, "Semana 330", Categoria.REMEDIOS, HOJE.plusDays(5));
+        CupomResgatado daSublinhado = cupom(produto(sublinhado, "Body", Categoria.ROUPAS), HOJE.plusDays(5));
+        // "Loja Bebe" e "LojaXBebe" casariam com "loja_bebe" se o _ fosse curinga
+        cupom(produto(empresa("Loja Bebe"), "Body", Categoria.ROUPAS), HOJE.plusDays(5));
+        cupom(produto(empresa("LojaXBebe"), "Body", Categoria.ROUPAS), HOJE.plusDays(5));
+
+        assertEquals(ids(cinquentaPorCento), ids(busca("50%")));
+        assertEquals(ids(promocao), ids(busca("33%")));
+        assertEquals(ids(daSublinhado), ids(busca("loja_bebe")));
+        assertEquals(ids(cinquentaPorCento, promocao).reversed(), ids(busca("%")));
+        assertEquals(1, listar(busca("_")).total());
+    }
+
     @Test
     void filtrosCombinados() {
         EmpresaParceira farmacia = empresa("Farmácia Vida");
