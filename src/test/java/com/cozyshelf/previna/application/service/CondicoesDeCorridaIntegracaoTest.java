@@ -1,12 +1,15 @@
 package com.cozyshelf.previna.application.service;
 
+import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
 import com.cozyshelf.previna.application.dto.request.AtualizacaoPerfilGestanteRequest;
+import com.cozyshelf.previna.application.dto.request.ItemAgendamentoRequest;
 import com.cozyshelf.previna.application.dto.request.ConteudoRequest;
 import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoEmpresaRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
+import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.Categoria;
@@ -530,5 +533,103 @@ class CondicoesDeCorridaIntegracaoTest {
         // Cada resposta mostra o saldo depois do próprio crédito: a que comitou por último vê a soma
         assertEquals(75, Math.max(saldoDaPrimeira, saldoDaSegunda));
         assertTrue(Math.min(saldoDaPrimeira, saldoDaSegunda) == 30 || Math.min(saldoDaPrimeira, saldoDaSegunda) == 45);
+    }
+
+    // ---- Cadastro de agendamentos (índice parcial agendamento_pendente_unico, V21) ----
+
+    private static final String PENDENTE_REPETIDO = "Essa gestante já tem esse exame ou consulta pendente nessa data";
+
+    private TipoAtendimento tipo(int pontos) {
+        return tipoRepository.save(new TipoAtendimento(medico.getId(), "Exame " + SEQUENCIA.incrementAndGet(),
+                CategoriaAtendimento.EXAME, pontos));
+    }
+
+    private static AgendamentoRequest pedido(Gestante gestante, TipoAtendimento tipo, LocalDate... datas) {
+        return new AgendamentoRequest(gestante.getId(), java.util.Arrays.stream(datas)
+                .map(data -> new ItemAgendamentoRequest(tipo.getId(), data, null))
+                .toList());
+    }
+
+    private int agendamentos(Gestante gestante, String status) {
+        return jdbc.queryForObject("SELECT count(*) FROM agendamento WHERE gestante_id = ? AND status = ?",
+                Integer.class, gestante.getId(), status);
+    }
+
+    // Duplo clique, duas abas ou dois médicos: os dois leem "nada pendente" ao mesmo tempo. O segundo INSERT espera o
+    // primeiro no índice e falha quando ele comita; antes, ficavam dois AGENDADO e a gestante ganhava os pontos duas
+    // vezes. Algumas rodadas, porque a ordem de chegada varia
+    @Test
+    void doisCadastrosSimultaneosIguaisGravamUmPendenteSo() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            Gestante gestante = gestante();
+            TipoAtendimento tipo = tipo(25);
+            AgendamentoRequest dados = pedido(gestante, tipo, LocalDate.now().plusDays(3));
+
+            List<Future<List<AgendamentoResponse>>> futuros = aoMesmoTempo(List.of(
+                    () -> agendamentoService.agendar(dados, medico.getId()),
+                    () -> agendamentoService.agendar(dados, medico.getId())));
+            String primeiro = desfecho(futuros.get(0));
+            String segundo = desfecho(futuros.get(1));
+
+            assertTrue(primeiro == null ^ segundo == null, "esperava um sucesso só: " + primeiro + " / " + segundo);
+            assertEquals(PENDENTE_REPETIDO, primeiro == null ? segundo : primeiro);
+            assertEquals(1, agendamentos(gestante, "AGENDADO"));
+        }
+    }
+
+    // O item repetido na mesma requisição cai no mesmo índice e a transação inteira volta atrás, inclusive o item
+    // diferente que vinha antes
+    @Test
+    void itemRepetidoNaMesmaRequisicaoNaoGravaNada() {
+        Gestante gestante = gestante();
+        TipoAtendimento tipo = tipo(25);
+        LocalDate data = LocalDate.now().plusDays(3);
+
+        var erro = assertThrows(ConflitoException.class, () -> agendamentoService.agendar(
+                pedido(gestante, tipo, data.plusDays(1), data, data), medico.getId()));
+
+        assertEquals(PENDENTE_REPETIDO, erro.getMessage());
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM agendamento WHERE gestante_id = ?", Integer.class,
+                gestante.getId()));
+    }
+
+    @Test
+    void mesmoTipoEmOutraDataContinuaPermitido() {
+        Gestante gestante = gestante();
+        TipoAtendimento tipo = tipo(25);
+        LocalDate data = LocalDate.now().plusDays(3);
+
+        agendamentoService.agendar(pedido(gestante, tipo, data), medico.getId());
+        agendamentoService.agendar(pedido(gestante, tipo, data.plusDays(7)), medico.getId());
+
+        assertEquals(2, agendamentos(gestante, "AGENDADO"));
+    }
+
+    @Test
+    void mesmoTipoEDataDepoisDaRealizacaoContinuaPermitido() {
+        Gestante gestante = gestante();
+        TipoAtendimento tipo = tipo(25);
+        LocalDate hoje = LocalDate.now();
+        Long anterior = agendamentoService.agendar(pedido(gestante, tipo, hoje), medico.getId()).getFirst().id();
+        agendamentoService.confirmar(anterior, medico.getId());
+
+        agendamentoService.agendar(pedido(gestante, tipo, hoje), medico.getId());
+
+        assertEquals(1, agendamentos(gestante, "REALIZADO"));
+        assertEquals(1, agendamentos(gestante, "AGENDADO"));
+    }
+
+    @Test
+    void mesmoTipoEDataDepoisDoNaoComparecimentoContinuaPermitido() {
+        Gestante gestante = gestante();
+        TipoAtendimento tipo = tipo(25);
+        LocalDate hoje = LocalDate.now();
+        Long anterior = agendamentoService.agendar(pedido(gestante, tipo, hoje), medico.getId()).getFirst().id();
+        agendamentoService.registrarNaoComparecimento(anterior, medico.getId());
+
+        agendamentoService.agendar(pedido(gestante, tipo, hoje), medico.getId());
+
+        assertEquals(1, agendamentos(gestante, "NAO_COMPARECEU"));
+        assertEquals(1, agendamentos(gestante, "AGENDADO"));
     }
 }
