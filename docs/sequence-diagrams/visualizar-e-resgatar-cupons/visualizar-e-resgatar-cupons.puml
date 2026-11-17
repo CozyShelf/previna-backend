@@ -34,12 +34,14 @@ end
 
 Gestante -> App : Abre um produto
 App -> Ofertas : GET /ofertas/produtos/{id}
-Ofertas -> Catalogo : detalhar(idProduto)
+Ofertas -> Catalogo : detalhar(idGestante do token, idProduto)
 Catalogo -> BD : produto, cupons válidos (mais baratos primeiro) e promoções vigentes da categoria
 BD --> Catalogo : dados
+Catalogo -> BD : quais dessas promoções a gestante já resgatou (uma consulta só)
+BD --> Catalogo : ids resgatados
 Catalogo --> Ofertas : produto com cupons e promoções
 Ofertas --> App : 200 OK (ou 404 se o produto não existe ou não tem oferta)
-App --> Gestante : Exibe cupons (desconto, pontos, validade) e promoções
+App --> Gestante : Exibe cupons (desconto, pontos, validade) e promoções (com "resgatada")\n(resgatar promoção: ver resgatar-promocao)
 
 Gestante -> App : Seleciona cupom e solicita resgate
 App --> Gestante : Solicita confirmação
