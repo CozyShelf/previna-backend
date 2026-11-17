@@ -1,9 +1,11 @@
 package com.cozyshelf.previna.controller;
 
+import com.cozyshelf.previna.application.service.GeradorCodigoResgate;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.Cupom;
+import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
@@ -13,6 +15,7 @@ import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.model.Usuario;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
+import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
@@ -413,6 +416,69 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
             assertEquals("PROMOCAO_SOBREPOSTA", conflito.get("codigo").asText());
             assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM promocao WHERE empresa_id = ?", Integer.class,
                     empresa.getId()));
+        }
+    }
+
+    // ---- Meus cupons: expiração na leitura ----
+
+    @Autowired
+    private CupomResgatadoRepository cupomResgatadoRepository;
+    @Autowired
+    private GeradorCodigoResgate geradorCodigo;
+
+    // Resgate do cupom pela gestante, já com a validade e o status indicados
+    private CupomResgatado resgateValidoAte(Gestante gestante, Cupom cupom, LocalDate validade, String status) {
+        EmpresaParceira empresa = empresaRepository.findById(cupom.getEmpresaId()).orElseThrow();
+        CupomResgatado resgate = cupomResgatadoRepository.save(new CupomResgatado(cupom, empresa, gestante,
+                geradorCodigo.gerarCodigoUnico(), null));
+        jdbc.update("UPDATE cupom_resgatado SET data_validade = ?, status = ? WHERE id = ?", validade, status,
+                resgate.getId());
+        return resgate;
+    }
+
+    private String statusDoResgate(CupomResgatado resgate) {
+        return jdbc.queryForObject("SELECT status FROM cupom_resgatado WHERE id = ?", String.class, resgate.getId());
+    }
+
+    private Callable<ResponseEntity<String>> meusCupons(Gestante gestante) {
+        HttpHeaders cabecalhos = autenticado(gestante);
+        return () -> http.exchange("/gestantes/cupons", HttpMethod.GET, new HttpEntity<>(cabecalhos), String.class);
+    }
+
+    // Duas aberturas de "meus cupons" ao mesmo tempo, com vencidos a expirar: as duas respondem 200 já com EXPIRADO
+    // (a segunda espera a trava de linha da primeira e o UPDATE condicionado a ATIVO não casa mais), sem deadlock nem
+    // 500, e o UTILIZADO vencido continua UTILIZADO. Algumas rodadas, porque a ordem de chegada não é forçada
+    @Test
+    void duasListagensSimultaneasDosCuponsExpiramOsVencidosSemErro() throws Exception {
+        for (int rodada = 0; rodada < 3; rodada++) {
+            Gestante gestante = gestanteAtivaComSaldo(0);
+            Cupom cupom = cupomDe(30);
+            List<CupomResgatado> vencidos = new ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                vencidos.add(resgateValidoAte(gestante, cupom, LocalDate.now().minusDays(1 + i), "ATIVO"));
+            }
+            CupomResgatado utilizadoVencido = resgateValidoAte(gestante, cupom, LocalDate.now().minusDays(2),
+                    "UTILIZADO");
+            CupomResgatado valido = resgateValidoAte(gestante, cupom, LocalDate.now().plusDays(1), "ATIVO");
+
+            var respostas = aoMesmoTempo(List.of(meusCupons(gestante), meusCupons(gestante)));
+
+            assertEquals(List.of(200, 200), status(respostas));
+            for (ResponseEntity<String> resposta : respostas) {
+                JsonNode pagina = corpo(resposta);
+                assertEquals(8, pagina.get("total").asInt());
+                JsonNode itens = pagina.get("itens");
+                assertEquals(valido.getId(), itens.get(0).get("id").asLong());
+                assertEquals("ATIVO", itens.get(0).get("status").asText());
+                for (int i = 1; i < itens.size(); i++) {
+                    assertNotEquals("ATIVO", itens.get(i).get("status").asText());
+                }
+            }
+            for (CupomResgatado vencido : vencidos) {
+                assertEquals("EXPIRADO", statusDoResgate(vencido));
+            }
+            assertEquals("UTILIZADO", statusDoResgate(utilizadoVencido));
+            assertEquals("ATIVO", statusDoResgate(valido));
         }
     }
 

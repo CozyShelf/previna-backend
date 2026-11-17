@@ -8,25 +8,31 @@ import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoEmpresaRequest;
 import com.cozyshelf.previna.application.dto.request.PrimeiroAcessoRequest;
 import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
+import com.cozyshelf.previna.application.dto.request.ResgateRequest;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
+import com.cozyshelf.previna.application.dto.response.PaginaResponse;
+import com.cozyshelf.previna.application.dto.response.ResgateResponse;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.CategoriaConteudo;
 import com.cozyshelf.previna.domain.model.ConteudoInformativo;
 import com.cozyshelf.previna.domain.model.Cupom;
+import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.Promocao;
+import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
 import com.cozyshelf.previna.domain.model.TipoConteudo;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.ConteudoInformativoRepository;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
+import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.FotoGestanteRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
@@ -895,5 +901,108 @@ class CondicoesDeCorridaIntegracaoTest {
 
         assertEquals(SOBREPOSTA, erro.getMessage());
         assertEquals("ROUPAS", jdbc.queryForObject("SELECT categoria FROM promocao WHERE id = ?", String.class, outra));
+    }
+
+    // ---- Meus cupons: expiração na leitura ----
+
+    @Autowired
+    private ResgateService resgateService;
+    @Autowired
+    private CupomResgatadoRepository cupomResgatadoRepository;
+    @Autowired
+    private GeradorCodigoResgate geradorCodigo;
+
+    // Resgate de cupom da gestante, válido até a data indicada, já com o status indicado
+    private CupomResgatado resgateValidoAte(Gestante gestante, Cupom cupom, EmpresaParceira empresa,
+                                            LocalDate validade, StatusCupomResgatado status) {
+        CupomResgatado resgate = cupomResgatadoRepository.save(new CupomResgatado(cupom, empresa, gestante,
+                geradorCodigo.gerarCodigoUnico(), null));
+        jdbc.update("UPDATE cupom_resgatado SET data_validade = ?, status = ? WHERE id = ?", validade, status.name(),
+                resgate.getId());
+        return resgate;
+    }
+
+    private String statusDoResgate(CupomResgatado resgate) {
+        return jdbc.queryForObject("SELECT status FROM cupom_resgatado WHERE id = ?", String.class, resgate.getId());
+    }
+
+    // Duas listagens da mesma gestante ao mesmo tempo (o app aberto em dois aparelhos, ou o pull-to-refresh junto com
+    // a abertura da tela), as duas com vencidos a expirar: o UPDATE condicionado a ATIVO faz a segunda esperar a trava
+    // de linha da primeira e reavaliar o WHERE, que já não casa. Nenhuma falha, nenhum deadlock, e o UTILIZADO vencido
+    // continua UTILIZADO. Algumas rodadas, porque a ordem de chegada varia
+    @Test
+    void duasListagensSimultaneasExpiramOsVencidosSemErroNemDeadlock() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            Gestante gestante = gestante();
+            EmpresaParceira empresa = empresa();
+            Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null,
+                    Categoria.FRALDAS, null));
+            Cupom cupom = cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN,
+                    LocalDate.now().plusDays(5), 30));
+            List<CupomResgatado> vencidos = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                vencidos.add(resgateValidoAte(gestante, cupom, empresa, LocalDate.now().minusDays(1 + i),
+                        StatusCupomResgatado.ATIVO));
+            }
+            CupomResgatado utilizadoVencido = resgateValidoAte(gestante, cupom, empresa,
+                    LocalDate.now().minusDays(3), StatusCupomResgatado.UTILIZADO);
+            CupomResgatado valido = resgateValidoAte(gestante, cupom, empresa, LocalDate.now(),
+                    StatusCupomResgatado.ATIVO);
+            ResgateRequest semFiltro = new ResgateRequest(null, null, null, null, null, null);
+
+            List<Future<PaginaResponse<ResgateResponse>>> futuros = aoMesmoTempo(List.of(
+                    () -> resgateService.listar(gestante.getId(), semFiltro),
+                    () -> resgateService.listar(gestante.getId(), semFiltro)));
+
+            for (Future<PaginaResponse<ResgateResponse>> futuro : futuros) {
+                // Sem exceção (deadlock ou outra) e já com o status novo: a segunda leitura vê o que a primeira gravou
+                PaginaResponse<ResgateResponse> pagina = futuro.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
+                assertEquals(10, pagina.total());
+                assertEquals(valido.getId(), pagina.itens().getFirst().id());
+                assertEquals(1, pagina.itens().stream()
+                        .filter(item -> item.status() == StatusCupomResgatado.ATIVO).count());
+                assertEquals(1, pagina.itens().stream()
+                        .filter(item -> item.status() == StatusCupomResgatado.UTILIZADO).count());
+            }
+            for (CupomResgatado vencido : vencidos) {
+                assertEquals("EXPIRADO", statusDoResgate(vencido));
+            }
+            assertEquals("UTILIZADO", statusDoResgate(utilizadoVencido));
+            assertEquals("ATIVO", statusDoResgate(valido));
+        }
+    }
+
+    // A validação na loja (card #11) também será um UPDATE condicionado a ATIVO: quem chega primeiro decide, e o outro
+    // não muda nada. Aqui a validação é simulada pelo próprio UPDATE, sobre um resgate ainda válido, durante as
+    // listagens: ela nunca é desfeita, porque a expiração só pega ATIVO vencido
+    @Test
+    void validacaoDuranteAsListagensNaoEDesfeita() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            Gestante gestante = gestante();
+            EmpresaParceira empresa = empresa();
+            Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null,
+                    Categoria.FRALDAS, null));
+            Cupom cupom = cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN,
+                    LocalDate.now().plusDays(5), 30));
+            for (int i = 0; i < 5; i++) {
+                resgateValidoAte(gestante, cupom, empresa, LocalDate.now().minusDays(1), StatusCupomResgatado.ATIVO);
+            }
+            CupomResgatado validado = resgateValidoAte(gestante, cupom, empresa, LocalDate.now(),
+                    StatusCupomResgatado.ATIVO);
+            ResgateRequest semFiltro = new ResgateRequest(null, null, null, null, null, null);
+
+            List<Future<Object>> futuros = aoMesmoTempo(List.of(
+                    () -> resgateService.listar(gestante.getId(), semFiltro),
+                    () -> jdbc.update("UPDATE cupom_resgatado SET status = 'UTILIZADO', data_uso = now()"
+                            + " WHERE id = ? AND status = 'ATIVO'", validado.getId()),
+                    () -> resgateService.listar(gestante.getId(), semFiltro)));
+            for (Future<Object> futuro : futuros) {
+                futuro.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
+            }
+
+            assertEquals("UTILIZADO", statusDoResgate(validado));
+            assertEquals(5, jdbc.queryForObject("SELECT count(*) FROM cupom_resgatado WHERE gestante_id = ?"
+                    + " AND status = 'EXPIRADO'", Integer.class, gestante.getId()));
+        }
     }
 }

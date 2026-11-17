@@ -11,6 +11,7 @@ import com.cozyshelf.previna.application.service.OfertaService;
 import com.cozyshelf.previna.application.service.PontuacaoService;
 import com.cozyshelf.previna.application.service.ProdutoService;
 import com.cozyshelf.previna.application.service.PromocaoService;
+import com.cozyshelf.previna.application.service.ResgateService;
 import com.cozyshelf.previna.application.service.TipoAtendimentoService;
 import com.cozyshelf.previna.domain.Campos;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
@@ -157,6 +158,8 @@ class MatrizAutorizacaoTest {
             Rota.get("/ofertas/empresas/{empresaId}/produtos", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas/produtos/{id}", EnumSet.of(GESTANTE)),
             Rota.post("/promocoes/{id}/resgatar", EnumSet.of(GESTANTE)),
+            Rota.get("/gestantes/cupons", EnumSet.of(GESTANTE)),
+            Rota.get("/gestantes/cupons/{id}", EnumSet.of(GESTANTE)),
 
             // Empresa parceira
             Rota.get("/empresas/perfil", EnumSet.of(EMPRESA_PARCEIRA)),
@@ -227,11 +230,13 @@ class MatrizAutorizacaoTest {
     @MockitoBean
     private PromocaoService promocaoService;
     @MockitoBean
+    private ResgateService resgateService;
+    @MockitoBean
     private TipoAtendimentoService tipoAtendimentoService;
 
     private Object[] servicos() {
         return new Object[]{agendamentoService, authService, conteudoService, cupomService, empresaService, gestanteService,
-                medicoService, ofertaService, pontuacaoService, produtoService, promocaoService,
+                medicoService, ofertaService, pontuacaoService, produtoService, promocaoService, resgateService,
                 tipoAtendimentoService};
     }
 
