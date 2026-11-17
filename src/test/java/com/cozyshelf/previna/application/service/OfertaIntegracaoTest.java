@@ -316,6 +316,28 @@ class OfertaIntegracaoTest {
         assertEquals(2, porEmpresa.getFirst().totalProdutos());
     }
 
+    // % e _ digitados são texto, não curinga do LIKE (Filtros.padraoContem): "50%" não acha tudo que tem "50", e
+    // "body_" não acha "body " nem "bodyX"
+    @Test
+    void buscaTrataPorcentagemESublinhadoComoTexto() {
+        EmpresaParceira loja = empresa("Loja");
+        cupom(produto(loja, "Fralda 50% off", Categoria.FRALDAS), 100);
+        cupom(produto(loja, "Fralda 500 unidades", Categoria.FRALDAS), 100);
+        cupom(produto(loja, "Body_bebe", Categoria.ROUPAS), 100);
+        cupom(produto(loja, "Body bebe", Categoria.ROUPAS), 100);
+        cupom(produto(loja, "Bodyxbebe", Categoria.ROUPAS), 100);
+
+        assertEquals(List.of("Fralda 50% off"), nomes(ofertaService.listarProdutos(0L, loja.getId(),
+                new OfertaRequest("50%", null, null, null, null, null, null)).itens()));
+        assertEquals(List.of("Body_bebe"), nomes(ofertaService.listarProdutos(0L, loja.getId(),
+                new OfertaRequest("body_", null, null, null, null, null, null)).itens()));
+        assertTrue(ofertaService.listarProdutos(0L, loja.getId(),
+                new OfertaRequest("%", null, null, null, null, null, null)).itens().size() == 1);
+        // Na lista de empresas também: o nome da empresa não tem %, e só o produto com % responde
+        var empresas = empresas(new OfertaRequest("0% off", null, loja.getId(), null, null, null, null));
+        assertEquals(List.of("Fralda 50% off"), nomes(empresas.getFirst().produtos()));
+    }
+
     @Test
     void cabeNoSaldoSoMostraProdutosComCupomQueAGestantePodeResgatar() {
         Gestante gestante = gestanteComSaldo(100);

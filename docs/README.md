@@ -60,6 +60,29 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   própria cópia: o cupom, `cupom_id`, produto e pontos; a promoção, `promocao_id`, título e categoria. O CHECK
   `cupom_resgatado_tipo_coerente` amarra quais colunas cada tipo preenche, e a resposta do resgate traz o `tipo`. O
   índice único só vale para a promoção: no cupom `promocao_id` é nulo, e nulos não colidem.
+- **Meus cupons (Acessar Cupons Resgatados):** `GET /gestantes/cupons` lista os cupons e as promoções resgatados pela
+  gestante do token (`PaginaResponse<ResgateResponse>`), e `GET /gestantes/cupons/{id}` traz um resgate; só o perfil
+  `GESTANTE` (o token do primeiro acesso recebe `403`). Filtros opcionais, com os nomes dos de `/ofertas`: `busca`
+  (trecho do nome da empresa, do produto do cupom ou do título da promoção, sem diferenciar maiúsculas nem acentos,
+  como a busca das ofertas), `categoria` (`FRALDAS`, `ROUPAS`, `REMEDIOS`), `tipo` (`CUPOM`, `PROMOCAO`), `status`
+  (`ATIVO`, `UTILIZADO`, `EXPIRADO`), `pagina` e `tamanho` (padrão 20, até 100). A categoria da promoção é a copiada
+  no resgate; a do cupom é a atual do produto, por join com `produto` (a cópia do cupom não guarda categoria, e o
+  produto sem categoria não entra em nenhum filtro de categoria). **Ordem:** `ATIVO` primeiro; `UTILIZADO` e
+  `EXPIRADO` juntos depois; em cada grupo, do resgate mais recente, com o id como desempate (`ORDER BY CASE`, no
+  banco, porque a lista é paginada). Uma consulta para a página (resgate e categoria do produto juntos) e uma para o
+  total. Na resposta, `titulo` é a frase do desconto no cupom ("10% de desconto em Fralda RN") e o título na promoção;
+  na promoção `produto` é nulo e `pontosGastos` é 0; `dataUso` é nula até a validação. Os nulos vão no JSON. Resgate
+  de outra gestante responde `404` "Resgate não encontrado", igual ao inexistente, para não revelar ids.
+- **Busca literal:** em todas as buscas por texto (listagens do portal, `/ofertas` e `/gestantes/cupons`), `%`, `_` e
+  `\` digitados são procurados como texto: `Filtros.padraoContem` os escapa e o `LIKE` usa `ESCAPE '\'`. Buscar
+  "50%" acha "Fralda 50% off", e não tudo que tem "50"; "_" não casa qualquer caractere.
+- **Expiração na leitura:** não há tarefa agendada; antes de listar, os resgates `ATIVO` vencidos
+  (`data_validade < hoje`; a validade vale até o fim do dia) da gestante viram `EXPIRADO`, e antes do detalhe, só o
+  resgate pedido. É um `UPDATE` só, condicionado a `status = 'ATIVO'`, sem ler as linhas antes para decidir: a
+  validação do código na loja (também um `UPDATE` condicionado a `ATIVO`) nunca é sobrescrita, e o `UTILIZADO`
+  vencido continua `UTILIZADO`. Duas listagens simultâneas da mesma gestante não se atrapalham: a segunda espera a
+  trava de linha da primeira, reavalia o `WHERE`, que já não casa, e lê o que a primeira gravou. Por isso a transação
+  da leitura não é `readOnly`.
 - **Uma promoção ativa por categoria em cada período (D12):** a empresa não tem duas promoções ativas da mesma
   categoria com períodos que se cruzam (os dois dias inclusos: uma que termina no dia 10 e outra que começa no 11 não
   se cruzam). A exclusão `promocao_sem_sobreposicao` (`V23`, GiST com `btree_gist`, só entre as `ativo`) barra no
