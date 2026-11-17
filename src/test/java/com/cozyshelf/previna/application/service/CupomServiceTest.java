@@ -13,6 +13,7 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
+import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
@@ -44,7 +45,7 @@ class CupomServiceTest {
     private final EmpresaParceiraRepository empresaRepository = mock(EmpresaParceiraRepository.class);
     private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
     private final CupomService service = new CupomService(cupomRepository, produtoRepository, resgatadoRepository,
-            empresaRepository, pontuacaoService);
+            empresaRepository, pontuacaoService, new GeradorCodigoResgate(resgatadoRepository));
 
     private final Produto fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
 
@@ -215,6 +216,9 @@ class CupomServiceTest {
         assertEquals(BigDecimal.TEN, copia.getDesconto());
         assertEquals(VALIDADE, copia.getDataValidade());
         assertEquals(200, copia.getPontosGastos());
+        assertEquals(TipoResgate.CUPOM, copia.getTipo());
+        assertNull(copia.getPromocao());
+        assertEquals(TipoResgate.CUPOM, resposta.tipo());
         assertEquals("10% de desconto em Fralda RN", resposta.descricao());
         assertEquals(VALIDADE, resposta.dataValidade());
     }

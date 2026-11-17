@@ -179,7 +179,7 @@ class OfertaIntegracaoTest {
         assertEquals(List.of("Pomada"), nomes(produtos));
         assertNull(produtos.getFirst().descontoPromocao());
         assertTrue(empresas(filtro(TipoOferta.PROMOCAO, null, null)).isEmpty());
-        assertTrue(ofertaService.detalhar(semCategoria.getId()).promocoes().isEmpty());
+        assertTrue(ofertaService.detalhar(0L, semCategoria.getId()).promocoes().isEmpty());
     }
 
     @Test
@@ -199,8 +199,8 @@ class OfertaIntegracaoTest {
         assertEquals(List.of("Fralda RN"), nomes(produtos));
         assertNull(produtos.getFirst().descontoPromocao());
         assertTrue(empresas(filtro(TipoOferta.PROMOCAO, null, null)).isEmpty());
-        assertTrue(ofertaService.detalhar(fralda.getId()).promocoes().isEmpty());
-        assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(body.getId()));
+        assertTrue(ofertaService.detalhar(0L, fralda.getId()).promocoes().isEmpty());
+        assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(0L, body.getId()));
 
         // Reativada, volta
         fraldas.alterarAtivo(true);
@@ -369,17 +369,21 @@ class OfertaIntegracaoTest {
         Cupom caro = cupom(fralda, "25", 300, HOJE.plusDays(30));
         Cupom barato = cupom(fralda, "10", 120, HOJE);
         cupom(fralda, "50", 10, HOJE.minusDays(1));
-        Promocao menor = promocao(loja, Categoria.FRALDAS, "10", HOJE, HOJE.plusDays(5));
-        Promocao maior = promocao(loja, Categoria.FRALDAS, "20", HOJE.minusDays(5), HOJE);
+        // Uma ativa só por categoria em cada período (V23): a outra de fraldas que cruza hoje está desativada
+        Promocao vigente = promocao(loja, Categoria.FRALDAS, "20", HOJE.minusDays(5), HOJE);
+        Promocao desativada = new Promocao(loja.getId(), "Antiga", null, new BigDecimal("30"), HOJE,
+                HOJE.plusDays(5), Categoria.FRALDAS);
+        desativada.alterarAtivo(false);
+        promocaoRepository.save(desativada);
         promocao(loja, Categoria.ROUPAS, "50", HOJE, HOJE.plusDays(5));
 
-        var detalhe = ofertaService.detalhar(fralda.getId());
+        var detalhe = ofertaService.detalhar(0L, fralda.getId());
 
         assertEquals("Loja " + sufixo, detalhe.empresa().nome());
         assertEquals(List.of(barato.getId(), caro.getId()), detalhe.cupons().stream()
                 .map(c -> c.id()).toList());
-        assertEquals(List.of(maior.getId(), menor.getId()), detalhe.promocoes().stream()
-                .map(p -> p.id()).toList());
+        assertEquals(List.of(vigente.getId()), detalhe.promocoes().stream().map(p -> p.id()).toList());
+        assertFalse(detalhe.promocoes().getFirst().resgatada());
     }
 
     @Test
@@ -388,8 +392,8 @@ class OfertaIntegracaoTest {
         Produto semOferta = produto(loja, "Fralda RN", Categoria.FRALDAS);
         cupom(semOferta, "10", 10, HOJE.minusDays(1));
 
-        var erro = assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(semOferta.getId()));
+        var erro = assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(0L, semOferta.getId()));
         assertEquals("Produto não encontrado", erro.getMessage());
-        assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(Long.MAX_VALUE));
+        assertThrows(NaoEncontradoException.class, () -> ofertaService.detalhar(0L, Long.MAX_VALUE));
     }
 }

@@ -50,8 +50,11 @@ public class OfertaController {
     }
 
     @GetMapping("/produtos/{id}")
-    @Operation(summary = "Retorna um produto em oferta com todos os cupons válidos e as promoções vigentes")
-    public ResponseEntity<ProdutoOfertaDetalheResponse> detalhar(@PathVariable Long id) {
-        return ResponseEntity.ok(ofertaService.detalhar(id));
+    @Operation(summary = "Retorna um produto em oferta com todos os cupons válidos e as promoções vigentes; cada "
+            + "promoção diz se a gestante autenticada já a resgatou")
+    public ResponseEntity<ProdutoOfertaDetalheResponse> detalhar(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UsuarioAutenticado gestante) {
+        return ResponseEntity.ok(ofertaService.detalhar(gestante.id(), id));
     }
 }

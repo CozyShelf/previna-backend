@@ -12,6 +12,7 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
+import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
 import com.cozyshelf.previna.domain.repository.Ofertas;
@@ -27,6 +28,7 @@ import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -49,15 +51,17 @@ public class OfertaService {
     private final CupomRepository cupomRepository;
     private final PromocaoRepository promocaoRepository;
     private final GestanteRepository gestanteRepository;
+    private final CupomResgatadoRepository cupomResgatadoRepository;
 
     public OfertaService(EmpresaParceiraRepository empresaRepository, ProdutoRepository produtoRepository,
                          CupomRepository cupomRepository, PromocaoRepository promocaoRepository,
-                         GestanteRepository gestanteRepository) {
+                         GestanteRepository gestanteRepository, CupomResgatadoRepository cupomResgatadoRepository) {
         this.empresaRepository = empresaRepository;
         this.produtoRepository = produtoRepository;
         this.cupomRepository = cupomRepository;
         this.promocaoRepository = promocaoRepository;
         this.gestanteRepository = gestanteRepository;
+        this.cupomResgatadoRepository = cupomResgatadoRepository;
     }
 
     // Página de empresas (por nome), cada uma com os primeiros produtos com oferta (por nome) e o total deles.
@@ -93,9 +97,10 @@ public class OfertaService {
         return PaginaResponse.de(produtos.map(resumidor(filtro.dia(), produtos.getContent())));
     }
 
-    // Produto sem nenhuma oferta responde como inexistente, como no catálogo
+    // Produto sem nenhuma oferta responde como inexistente, como no catálogo. resgatada: se a gestante do token já
+    // resgatou a promoção (cada uma se resgata uma vez só)
     @Transactional(readOnly = true)
-    public ProdutoOfertaDetalheResponse detalhar(Long idProduto) {
+    public ProdutoOfertaDetalheResponse detalhar(Long idGestante, Long idProduto) {
         LocalDate hoje = LocalDate.now();
         Produto produto = produtoRepository.findById(idProduto)
                 .orElseThrow(() -> new NaoEncontradoException(PRODUTO_NAO_ENCONTRADO));
@@ -106,6 +111,9 @@ public class OfertaService {
             throw new NaoEncontradoException(PRODUTO_NAO_ENCONTRADO);
         }
         EmpresaParceira empresa = empresaRepository.findById(produto.getEmpresaId()).orElseThrow();
+        // Uma consulta para todas as promoções do produto
+        Set<Long> resgatadas = promocoes.isEmpty() ? Set.of() : cupomResgatadoRepository
+                .promocoesResgatadas(idGestante, promocoes.stream().map(Promocao::getId).toList());
         return new ProdutoOfertaDetalheResponse(produto.getId(), produto.getNome(), produto.getCategoria(),
                 produto.getImagemUrl(),
                 new ProdutoOfertaDetalheResponse.Empresa(empresa.getId(), empresa.getRazaoSocial(),
@@ -114,7 +122,7 @@ public class OfertaService {
                         cupom.getDesconto(), cupom.getPontosNecessarios(), cupom.getDataValidade())).toList(),
                 promocoes.stream().map(promocao -> new ProdutoOfertaDetalheResponse.Promocao(promocao.getId(),
                         promocao.getTitulo(), promocao.getDesconto(), promocao.getDataInicio(),
-                        promocao.getDataFim())).toList());
+                        promocao.getDataFim(), resgatadas.contains(promocao.getId()))).toList());
     }
 
     // O saldo só é lido com "cabe no meu saldo"; a gestante vem do token

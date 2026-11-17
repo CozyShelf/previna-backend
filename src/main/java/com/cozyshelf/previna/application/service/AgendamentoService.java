@@ -13,7 +13,6 @@ import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,26 +67,11 @@ public class AgendamentoService {
         try {
             return agendamentoRepository.saveAllAndFlush(novos);
         } catch (DataIntegrityViolationException e) {
-            if (violou(e, PENDENTE_UNICO)) {
+            if (RestricoesDoBanco.violou(e, PENDENTE_UNICO)) {
                 throw new ConflitoException(MENSAGEM_PENDENTE_REPETIDO);
             }
             throw e;
         }
-    }
-
-    // O nome vem do Hibernate, que o tira do texto do PostgreSQL. Com o servidor em outro idioma o extrator não
-    // reconhece o texto, mas o nome entre aspas continua na mensagem; por isso as mensagens também são conferidas
-    static boolean violou(DataIntegrityViolationException e, String restricao) {
-        for (Throwable causa = e; causa != null; causa = causa.getCause()) {
-            if (causa instanceof ConstraintViolationException violacao
-                    && restricao.equalsIgnoreCase(violacao.getConstraintName())) {
-                return true;
-            }
-            if (causa.getMessage() != null && causa.getMessage().contains("\"" + restricao + "\"")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // Pendentes primeiro (a ordem do enum é a de exibição), depois pela data prevista; o id desempata.

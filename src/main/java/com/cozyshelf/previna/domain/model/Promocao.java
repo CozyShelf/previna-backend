@@ -65,6 +65,11 @@ public class Promocao {
                 && produto.getEmpresaId().equals(empresaId);
     }
 
+    // Ativa e com o dia entre o início e o fim (os dois inclusive): o mesmo critério do catálogo de ofertas
+    public boolean vigenteEm(LocalDate dia) {
+        return ativo && !dia.isBefore(dataInicio) && !dia.isAfter(dataFim);
+    }
+
     public String getTitulo() {
         return titulo;
     }

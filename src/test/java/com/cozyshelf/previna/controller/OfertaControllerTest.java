@@ -148,12 +148,13 @@ class OfertaControllerTest {
 
     @Test
     void detalheDoProduto() throws Exception {
-        when(ofertaService.detalhar(5L)).thenReturn(new ProdutoOfertaDetalheResponse(5L, "Fralda RN",
+        when(ofertaService.detalhar(7L, 5L)).thenReturn(new ProdutoOfertaDetalheResponse(5L, "Fralda RN",
                 Categoria.FRALDAS, "/empresas/produtos/5/imagem?v=1",
                 new ProdutoOfertaDetalheResponse.Empresa(1L, "Loja X", null, null),
                 List.of(new ProdutoOfertaDetalheResponse.Cupom(9L, new BigDecimal("10.00"), 120,
                         LocalDate.of(2026, 12, 31))),
-                List.of()));
+                List.of(new ProdutoOfertaDetalheResponse.Promocao(3L, "Semana do bebê", new BigDecimal("15.00"),
+                        LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), true))));
 
         mvc.perform(get("/ofertas/produtos/5").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isOk())
@@ -161,12 +162,12 @@ class OfertaControllerTest {
                 .andExpect(jsonPath("$.empresa.logo").value(nullValue()))
                 .andExpect(jsonPath("$.cupons[0].pontosNecessarios").value(120))
                 .andExpect(jsonPath("$.cupons[0].dataValidade").value("2026-12-31"))
-                .andExpect(jsonPath("$.promocoes").isEmpty());
+                .andExpect(jsonPath("$.promocoes[0].resgatada").value(true));
     }
 
     @Test
     void detalheDeProdutoSemOfertaResponde404() throws Exception {
-        when(ofertaService.detalhar(5L)).thenThrow(new NaoEncontradoException("Produto não encontrado"));
+        when(ofertaService.detalhar(7L, 5L)).thenThrow(new NaoEncontradoException("Produto não encontrado"));
 
         mvc.perform(get("/ofertas/produtos/5").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isNotFound())

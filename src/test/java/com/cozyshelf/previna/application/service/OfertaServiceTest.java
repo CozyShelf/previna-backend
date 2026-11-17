@@ -13,6 +13,7 @@ import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.model.TipoOferta;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
+import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
 import com.cozyshelf.previna.domain.repository.ProdutoRepository;
@@ -48,8 +49,9 @@ class OfertaServiceTest {
     private final CupomRepository cupomRepository = mock(CupomRepository.class);
     private final PromocaoRepository promocaoRepository = mock(PromocaoRepository.class);
     private final GestanteRepository gestanteRepository = mock(GestanteRepository.class);
+    private final CupomResgatadoRepository resgatadoRepository = mock(CupomResgatadoRepository.class);
     private final OfertaService service = new OfertaService(empresaRepository, produtoRepository, cupomRepository,
-            promocaoRepository, gestanteRepository);
+            promocaoRepository, gestanteRepository, resgatadoRepository);
 
     private final EmpresaParceira farmacia = empresa(1L, "Farmácia Vida");
     private final EmpresaParceira loja = empresa(2L, "Loja do Bebê");
@@ -261,7 +263,7 @@ class OfertaServiceTest {
                 Sort.by(Sort.Order.desc("desconto"), Sort.Order.asc("id"))))
                 .thenReturn(List.of(promocao(5L, 1L, Categoria.FRALDAS, "20"), promocao(6L, 1L, Categoria.ROUPAS, "50")));
 
-        var detalhe = service.detalhar(10L);
+        var detalhe = service.detalhar(7L, 10L);
 
         assertEquals("Fralda RN", detalhe.nome());
         assertEquals(Categoria.FRALDAS, detalhe.categoria());
@@ -286,17 +288,46 @@ class OfertaServiceTest {
         when(promocaoRepository.vigentes(anyCollection(), any(), any(Sort.class)))
                 .thenReturn(List.of(promocao(5L, 1L, Categoria.FRALDAS, "20")));
 
-        var detalhe = service.detalhar(10L);
+        var detalhe = service.detalhar(7L, 10L);
 
         assertTrue(detalhe.cupons().isEmpty());
         assertEquals(1, detalhe.promocoes().size());
+    }
+
+    // resgatada vem de uma consulta só, com as promoções que valem para o produto, e é da gestante do token
+    @Test
+    void detalheDizQuaisPromocoesAGestanteJaResgatou() {
+        when(produtoRepository.findById(10L)).thenReturn(Optional.of(fralda));
+        when(empresaRepository.findById(1L)).thenReturn(Optional.of(farmacia));
+        when(cupomRepository.validos(anyCollection(), any(), any(Sort.class))).thenReturn(List.of());
+        when(promocaoRepository.vigentes(anyCollection(), any(), any(Sort.class))).thenReturn(List.of(
+                promocao(5L, 1L, Categoria.FRALDAS, "20"), promocao(6L, 1L, Categoria.FRALDAS, "10"),
+                promocao(8L, 1L, Categoria.ROUPAS, "50")));
+        when(resgatadoRepository.promocoesResgatadas(7L, List.of(5L, 6L))).thenReturn(java.util.Set.of(6L));
+
+        var detalhe = service.detalhar(7L, 10L);
+
+        assertEquals(List.of(false, true), detalhe.promocoes().stream().map(p -> p.resgatada()).toList());
+        verify(resgatadoRepository, times(1)).promocoesResgatadas(any(), any());
+    }
+
+    @Test
+    void detalheSemPromocaoNaoConsultaOsResgates() {
+        when(produtoRepository.findById(10L)).thenReturn(Optional.of(fralda));
+        when(empresaRepository.findById(1L)).thenReturn(Optional.of(farmacia));
+        when(cupomRepository.validos(anyCollection(), any(), any(Sort.class)))
+                .thenReturn(List.of(cupom(1L, fralda, "10", 120)));
+        when(promocaoRepository.vigentes(anyCollection(), any(), any(Sort.class))).thenReturn(List.of());
+
+        assertTrue(service.detalhar(7L, 10L).promocoes().isEmpty());
+        verify(resgatadoRepository, never()).promocoesResgatadas(any(), any());
     }
 
     @Test
     void detalheDeProdutoInexistenteResponde404() {
         when(produtoRepository.findById(99L)).thenReturn(Optional.empty());
 
-        var erro = assertThrows(NaoEncontradoException.class, () -> service.detalhar(99L));
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.detalhar(7L, 99L));
         assertEquals("Produto não encontrado", erro.getMessage());
     }
 
@@ -308,7 +339,7 @@ class OfertaServiceTest {
         when(promocaoRepository.vigentes(anyCollection(), any(), any(Sort.class)))
                 .thenReturn(List.of(promocao(5L, 1L, Categoria.FRALDAS, "20")));
 
-        var erro = assertThrows(NaoEncontradoException.class, () -> service.detalhar(11L));
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.detalhar(7L, 11L));
         assertEquals("Produto não encontrado", erro.getMessage());
         verify(empresaRepository, never()).findById(any());
     }

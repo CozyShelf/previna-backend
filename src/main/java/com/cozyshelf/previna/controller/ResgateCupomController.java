@@ -2,7 +2,6 @@ package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
-import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.service.CupomService;
 import com.cozyshelf.previna.infrastructure.security.UsuarioAutenticado;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.UUID;
-import java.util.regex.Pattern;
 
 // Lado da gestante dos cupons. A gestante vem do token, não do caminho: uma gestante não resgata com os pontos de outra
 @RestController
@@ -30,10 +27,6 @@ import java.util.regex.Pattern;
 @PreAuthorize("hasRole('GESTANTE')")
 @Tag(name = "Cupons")
 public class ResgateCupomController {
-    // Só a forma canônica: o UUID.fromString aceita coisas como "1-2-3-4-5"
-    private static final Pattern UUID_CANONICO =
-            Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
-
     private final CupomService cupomService;
 
     public ResgateCupomController(CupomService cupomService) {
@@ -60,18 +53,7 @@ public class ResgateCupomController {
             @Parameter(description = "UUID gerado pelo app a cada confirmação de resgate; opcional")
             @RequestHeader(name = "Idempotency-Key", required = false) String chave,
             @AuthenticationPrincipal UsuarioAutenticado gestante) {
-        CupomService.Resgate resgate = cupomService.resgatar(id, gestante.id(), chaveIdempotencia(chave));
+        CupomService.Resgate resgate = cupomService.resgatar(id, gestante.id(), ChaveIdempotencia.ler(chave));
         return ResponseEntity.status(resgate.repetido() ? HttpStatus.OK : HttpStatus.CREATED).body(resgate.cupom());
-    }
-
-    // Ausente: resgate sem idempotência (versões antigas do app). Presente, tem de ser um UUID
-    private static UUID chaveIdempotencia(String chave) {
-        if (chave == null) {
-            return null;
-        }
-        if (!UUID_CANONICO.matcher(chave).matches()) {
-            throw new DadosInvalidosException("Idempotency-Key deve ser um UUID");
-        }
-        return UUID.fromString(chave);
     }
 }

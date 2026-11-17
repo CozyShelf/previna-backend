@@ -12,6 +12,7 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.StatusConta;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
+import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.model.Usuario;
 import com.cozyshelf.previna.infrastructure.config.SecurityConfig;
 import com.cozyshelf.previna.infrastructure.security.JwtService;
@@ -82,7 +83,7 @@ class ResgateCupomControllerTest {
     }
 
     private static CupomResgatadoResponse resgatado(int saldo) {
-        return new CupomResgatadoResponse(1L, "ABCD2345", "10% de desconto em Fralda RN", "Farmácia Vida",
+        return new CupomResgatadoResponse(1L, TipoResgate.CUPOM, "ABCD2345", "10% de desconto em Fralda RN", "Farmácia Vida",
                 LocalDate.now().plusDays(10), StatusCupomResgatado.ATIVO, Instant.now(), 100, saldo);
     }
 
@@ -178,7 +179,8 @@ class ResgateCupomControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.codigo").value("ABCD2345"))
                 .andExpect(jsonPath("$.saldo").value(300))
-                .andExpect(jsonPath("$.pontosGastos").value(100));
+                .andExpect(jsonPath("$.pontosGastos").value(100))
+                .andExpect(jsonPath("$.tipo").value("CUPOM"));
 
         verify(cupomService).resgatar(5L, 7L, null);
         verify(cupomService, never()).resgatar(anyLong(), eq(99L), any());
