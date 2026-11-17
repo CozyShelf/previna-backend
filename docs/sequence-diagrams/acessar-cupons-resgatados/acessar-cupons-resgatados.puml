@@ -4,39 +4,56 @@ autonumber
 
 actor "Gestante" as Gestante
 boundary "App Previna" as App
-control "CupomController" as Controller
-participant "CupomService" as Service
+control "CupomResgatadoController" as Controller
+participant "ResgateService" as Service
 database "Banco de Dados" as BD
 
 note over Gestante, Controller
-    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
-    A gestante vem do token, não do caminho: uma gestante não vê os cupons de outra.
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE); o token do primeiro acesso recebe 403.
+    A gestante vem do token, não do caminho: uma gestante não vê os resgates de outra.
 end note
 
 Gestante -> App : Acessa "Meus Cupons"
-App -> Controller : GET /gestantes/cupons
-Controller -> Service : listarCuponsResgatados(idGestante do token)
-Service -> BD : buscarCuponsResgatados(idGestante)
-BD --> Service : lista de cupons resgatados
-Service -> Service : marca como EXPIRADO os ATIVOS\ncom a validade do cupom vencida
-Service --> Controller : cupons (ATIVO, UTILIZADO, EXPIRADO)
-Controller --> App : 200 OK
-App --> Gestante : Exibe cupons agrupados por status
+App -> Controller : GET /gestantes/cupons?busca&categoria&tipo&status&pagina&tamanho
 
-Gestante -> App : Seleciona um cupom
+alt filtro inválido (categoria, tipo ou status desconhecido, busca > 100, pagina < 0, tamanho fora de 1 a 100)
+    Controller --> App : 400 Bad Request
+else filtros válidos (todos opcionais)
+    Controller -> Service : listar(idGestante do token, filtros)
+    Service -> BD : UPDATE cupom_resgatado SET status = 'EXPIRADO'\nWHERE gestante_id = :gestante AND status = 'ATIVO' AND data_validade < hoje
+    BD --> Service : linhas expiradas (nenhuma é lida antes)
+    Service -> BD : página: resgates da gestante LEFT JOIN produto (categoria atual do cupom)\nfiltros; ORDER BY CASE status ATIVO primeiro, data_resgate DESC, id DESC
+    BD --> Service : resgates da página
+    Service -> BD : COUNT com os mesmos filtros
+    BD --> Service : total
+    Service --> Controller : página de resgates (cupons e promoções)
+    Controller --> App : 200 OK
+    App --> Gestante : Exibe os ativos primeiro, depois os utilizados e expirados
+end
+
+Gestante -> App : Seleciona um resgate
 App -> Controller : GET /gestantes/cupons/{id}
-Controller -> Service : obterDetalhes(idCupomResgatado, idGestante do token)
-Service -> BD : buscarCupomResgatado(id, idGestante)
+Controller -> Service : detalhar(idGestante do token, idResgate)
+Service -> BD : UPDATE ... SET status = 'EXPIRADO'\nWHERE id = :id AND gestante_id = :gestante AND status = 'ATIVO' AND data_validade < hoje
+Service -> BD : buscarResgate(id, idGestante) LEFT JOIN produto
 BD --> Service : resultado
 
-alt cupom inexistente ou resgatado por outra gestante
-    Service --> Controller : Erro: cupom não encontrado
+alt resgate inexistente ou de outra gestante
+    Service --> Controller : Erro: resgate não encontrado
     Controller --> App : 404 Not Found
-    App --> Gestante : Exibe "Cupom não encontrado"
-else cupom da gestante
-    Service --> Controller : detalhes (código, empresa, produto, desconto, validade, status)
+    App --> Gestante : Exibe "Resgate não encontrado"
+else resgate da gestante
+    Service --> Controller : tipo, código, título, empresa, produto, categoria,\ndesconto, validade, status, data do resgate e do uso, pontos
     Controller --> App : 200 OK
-    App --> Gestante : Exibe código/QR Code, empresa, produto,\ndesconto, validade e regras de uso
+    App --> Gestante : Exibe código/QR Code, empresa, produto ou categoria,\ndesconto, validade e status
 end
+
+note over Gestante, BD
+    Não há tarefa agendada: o status EXPIRADO é gravado na leitura. O UPDATE é um só e condicionado a ATIVO, sem ler as
+    linhas antes: a validação do código na loja (também um UPDATE condicionado a ATIVO) nunca é sobrescrita, e duas
+    listagens simultâneas não se atrapalham (a segunda espera a trava de linha da primeira e o WHERE já não casa).
+    Os dados vêm da cópia gravada no resgate; só a categoria do cupom vem do produto como está hoje.
+    Promoção: produto nulo, categoria e título copiados, pontosGastos 0.
+end note
 
 @enduml

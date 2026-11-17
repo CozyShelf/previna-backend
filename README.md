@@ -24,6 +24,10 @@ empresas parceiras. As promoções das empresas não custam pontos: cada gestant
 Contas pré-cadastradas recebem uma senha temporária; o token emitido com ela tem o papel `PRIMEIRO_ACESSO_<perfil>`
 e só serve para concluir o primeiro acesso. A gestante e a empresa nunca são lidas do caminho da URL, e sim do token.
 
+A gestante vê os cupons e as promoções que resgatou em `GET /gestantes/cupons` (filtros `busca`, `categoria`, `tipo`,
+`status`, paginado; ativos primeiro) e cada um em `GET /gestantes/cupons/{id}`. Os vencidos passam a `EXPIRADO` na
+própria leitura (ver [`docs/README.md`](docs/README.md)).
+
 ## Como rodar
 
 O jeito recomendado é pelo repositório [`previna-development`](../previna-development), que sobe API, banco, portal,
@@ -95,12 +99,15 @@ mvn test
   cada rota contra os perfis possíveis (anônimo, administrador, médico, gestante, empresa e os dois primeiros acessos)
   e falha se aparecer rota nova fora da matriz: ao criar um endpoint, adicione uma linha em `ROTAS`.
 - **Integração com PostgreSQL** (`ResgateCupomIntegracaoTest`, `CondicoesDeCorridaIntegracaoTest`,
-  `RequisicoesSimultaneasHttpIntegracaoTest`, `FiltrosIntegracaoTest`, `OfertaIntegracaoTest`): duas requisições HTTP
+  `RequisicoesSimultaneasHttpIntegracaoTest`, `FiltrosIntegracaoTest`, `OfertaIntegracaoTest`,
+  `CupomResgatadoIntegracaoTest`): duas requisições HTTP
   simultâneas de ponta a ponta (servidor numa porta aleatória, token JWT, filtro de segurança e controller) em que só
   uma tem efeito, a trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), a
   idempotência do resgate, o saldo alterado só por `UPDATE` atômico, as travas do primeiro acesso e das edições, o
   agendamento pendente único (cadastros iguais simultâneos gravam um só), o resgate único da promoção e a promoção
-  ativa sem sobreposição (resgates, cadastros e reativações simultâneos têm um efeito só), o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
+  ativa sem sobreposição (resgates, cadastros e reativações simultâneos têm um efeito só), a expiração dos cupons
+  resgatados na leitura (listagens simultâneas sem erro nem deadlock, e o `UTILIZADO` nunca desfeito), os filtros, a
+  ordem e a paginação de "meus cupons", o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
   aplicadas nele); sem ela, são pulados.
 
 No ambiente do `previna-development`:
