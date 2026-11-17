@@ -1,0 +1,78 @@
+@startuml resgatar-promocao
+title Resgatar Promoção (Gestante)
+autonumber
+
+actor "Gestante" as Gestante
+boundary "App Previna" as App
+control "ResgatePromocaoController" as Controller
+participant "PromocaoService" as Service
+participant "PontuacaoService" as Pontuacao
+database "Banco de Dados" as BD
+
+note over Gestante, Controller
+    Requer gestante autenticada com conta ATIVA (perfil GESTANTE).
+    A gestante vem do token, não do caminho.
+end note
+
+Gestante -> App : Abre um produto em oferta (GET /ofertas/produtos/{id})
+App --> Gestante : Exibe as promoções vigentes; as já resgatadas\nvêm com "resgatada" e não oferecem o resgate
+Gestante -> App : Seleciona a promoção e solicita resgate
+App --> Gestante : Solicita confirmação
+Gestante -> App : Confirma resgate
+App -> Controller : POST /promocoes/{id}/resgatar\n(Idempotency-Key: UUID novo a cada confirmação)
+
+alt Idempotency-Key presente e não é um UUID
+    Controller --> App : 400 Bad Request
+else chave ausente ou válida
+    Controller -> Service : resgatar(idPromocao, idGestante do token, chave)
+    Service -> BD : buscarPromocao(idPromocao) (sem trava)
+    BD --> Service : promoção
+
+    alt promoção inexistente
+        Service --> Controller : Erro: promoção não encontrada
+        Controller --> App : 404 Not Found
+        App --> Gestante : Exibe "Promoção não encontrada"
+    else promoção existe
+        Service -> Pontuacao : travarGestante(idGestante)
+        Pontuacao -> BD : SELECT ... FOR UPDATE
+        Pontuacao --> Service : gestante (com o saldo)
+
+        alt já há resgate da gestante com a mesma chave (toque repetido)
+            Service -> BD : buscarResgate(idGestante, chave)
+            BD --> Service : resgate feito antes
+            Service --> Controller : o mesmo resgate, com o saldo atual
+            Controller --> App : 200 OK
+            App --> Gestante : Exibe o código da promoção
+        else promoção desativada, antes do início ou depois do fim
+            Service --> Controller : Erro: promoção indisponível
+            Controller --> App : 409 Conflict
+            App --> Gestante : Exibe "Promoção indisponível"
+        else promoção vigente
+            Service -> Service : gerarCodigoUnico()
+            Service -> BD : salvarResgate(tipo = PROMOCAO, idGestante, idPromocao, codigo, status = ATIVO, chave,\n cópia de título, categoria, empresa, desconto e validade = data_fim) com flush
+
+            alt a gestante já resgatou esta promoção\n(índice único cupom_resgatado_promocao_uma_vez)
+                BD --> Service : Erro: violação do índice único
+                Service --> Controller : Erro: promoção já resgatada
+                Controller --> App : 409 Conflict
+                App --> Gestante : Exibe "Promoção já resgatada"
+            else primeiro resgate
+                BD --> Service : resgate salvo
+                Service --> Controller : resgate (tipo PROMOCAO, pontosGastos 0, saldo atual)
+                Controller --> App : 201 Created
+                App --> Gestante : Exibe o código, válido até o fim da promoção
+            end
+        end
+    end
+end
+
+note over Gestante, BD
+    A promoção não custa pontos: não há débito nem transacao_pontos, e o saldo da resposta é o atual.
+    Cada gestante resgata cada promoção uma vez; quem decide é o índice único (gestante_id, promocao_id), e não uma
+    consulta antes: dois resgates simultâneos com chaves diferentes gravam um só, e o outro recebe 409.
+    O duplo toque manda a mesma Idempotency-Key: o segundo espera na trava da gestante e recebe o resgate do primeiro.
+    O resgate fica em cupom_resgatado (tipo PROMOCAO) com uma cópia da promoção: editá-la depois não muda o resgate.
+    Cupom e promoção do mesmo produto são resgates independentes; o cupom continua podendo ser resgatado várias vezes.
+end note
+
+@enduml

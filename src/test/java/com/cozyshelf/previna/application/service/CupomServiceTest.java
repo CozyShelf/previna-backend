@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.CupomRequest;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -13,6 +14,7 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
+import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
@@ -44,7 +46,7 @@ class CupomServiceTest {
     private final EmpresaParceiraRepository empresaRepository = mock(EmpresaParceiraRepository.class);
     private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
     private final CupomService service = new CupomService(cupomRepository, produtoRepository, resgatadoRepository,
-            empresaRepository, pontuacaoService);
+            empresaRepository, pontuacaoService, new GeradorCodigoResgate(resgatadoRepository));
 
     private final Produto fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
 
@@ -215,6 +217,9 @@ class CupomServiceTest {
         assertEquals(BigDecimal.TEN, copia.getDesconto());
         assertEquals(VALIDADE, copia.getDataValidade());
         assertEquals(200, copia.getPontosGastos());
+        assertEquals(TipoResgate.CUPOM, copia.getTipo());
+        assertNull(copia.getPromocao());
+        assertEquals(TipoResgate.CUPOM, resposta.tipo());
         assertEquals("10% de desconto em Fralda RN", resposta.descricao());
         assertEquals(VALIDADE, resposta.dataValidade());
     }
@@ -272,6 +277,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
+        assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
         verify(resgatadoRepository, never()).save(any());
     }
 
@@ -283,6 +289,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
+        assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
     }
 
     @Test
@@ -297,6 +304,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Pontos insuficientes", erro.getMessage());
+        assertEquals(CodigoErro.PONTOS_INSUFICIENTES, erro.getCodigo());
         verify(resgatadoRepository, never()).save(any());
         verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
     }
@@ -319,6 +327,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Pontos insuficientes", erro.getMessage());
+        assertEquals(CodigoErro.PONTOS_INSUFICIENTES, erro.getCodigo());
     }
 
     @Test
@@ -331,6 +340,7 @@ class CupomServiceTest {
 
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
+        assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
     }
 
     @Test

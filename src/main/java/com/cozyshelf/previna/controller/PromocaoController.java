@@ -8,6 +8,7 @@ import com.cozyshelf.previna.application.dto.response.PromocaoResponse;
 import com.cozyshelf.previna.application.service.PromocaoService;
 import com.cozyshelf.previna.infrastructure.security.UsuarioAutenticado;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -44,7 +45,9 @@ public class PromocaoController {
     }
 
     @PostMapping
-    @Operation(summary = "Cadastra uma promoção para uma categoria de produtos da empresa autenticada")
+    @Operation(summary = "Cadastra uma promoção para uma categoria de produtos da empresa autenticada; uma ativa só "
+            + "por categoria em cada período")
+    @ApiResponse(responseCode = "409", description = "Já existe promoção ativa dessa categoria nesse período (codigo PROMOCAO_SOBREPOSTA)")
     public ResponseEntity<PromocaoResponse> cadastrar(
             @RequestBody @Valid PromocaoRequest dados,
             @AuthenticationPrincipal UsuarioAutenticado empresa) {
@@ -61,6 +64,7 @@ public class PromocaoController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Atualiza uma promoção da empresa autenticada; a situação (ativo) não muda")
+    @ApiResponse(responseCode = "409", description = "Já existe promoção ativa dessa categoria nesse período (codigo PROMOCAO_SOBREPOSTA)")
     public ResponseEntity<PromocaoResponse> atualizar(
             @PathVariable Long id,
             @RequestBody @Valid PromocaoRequest dados,
@@ -70,6 +74,7 @@ public class PromocaoController {
 
     @PutMapping("/{id}/ativo")
     @Operation(summary = "Ativa ou desativa uma promoção da empresa autenticada; desativada sai do catálogo de ofertas")
+    @ApiResponse(responseCode = "409", description = "Ao ativar: já existe promoção ativa dessa categoria nesse período (codigo PROMOCAO_SOBREPOSTA)")
     public ResponseEntity<PromocaoResponse> alterarAtivo(
             @PathVariable Long id,
             @RequestBody @Valid AtivacaoRequest dados,

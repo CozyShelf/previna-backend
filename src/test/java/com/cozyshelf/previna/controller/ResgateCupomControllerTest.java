@@ -2,6 +2,7 @@ package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.application.service.CupomService;
@@ -12,6 +13,7 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.StatusConta;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
+import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.model.Usuario;
 import com.cozyshelf.previna.infrastructure.config.SecurityConfig;
 import com.cozyshelf.previna.infrastructure.security.JwtService;
@@ -19,6 +21,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -82,7 +85,7 @@ class ResgateCupomControllerTest {
     }
 
     private static CupomResgatadoResponse resgatado(int saldo) {
-        return new CupomResgatadoResponse(1L, "ABCD2345", "10% de desconto em Fralda RN", "Farmácia Vida",
+        return new CupomResgatadoResponse(1L, TipoResgate.CUPOM, "ABCD2345", "10% de desconto em Fralda RN", "Farmácia Vida",
                 LocalDate.now().plusDays(10), StatusCupomResgatado.ATIVO, Instant.now(), 100, saldo);
     }
 
@@ -178,7 +181,8 @@ class ResgateCupomControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.codigo").value("ABCD2345"))
                 .andExpect(jsonPath("$.saldo").value(300))
-                .andExpect(jsonPath("$.pontosGastos").value(100));
+                .andExpect(jsonPath("$.pontosGastos").value(100))
+                .andExpect(jsonPath("$.tipo").value("CUPOM"));
 
         verify(cupomService).resgatar(5L, 7L, null);
         verify(cupomService, never()).resgatar(anyLong(), eq(99L), any());
@@ -249,13 +253,17 @@ class ResgateCupomControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Cupom indisponível", "Pontos insuficientes"})
-    void regraVioladaResponde409ComAMensagem(String mensagem) throws Exception {
-        when(cupomService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem));
+    @CsvSource({
+            "Cupom indisponível, CUPOM_INDISPONIVEL",
+            "Pontos insuficientes, PONTOS_INSUFICIENTES"
+    })
+    void regraVioladaResponde409ComAMensagemEOCodigo(String mensagem, CodigoErro codigo) throws Exception {
+        when(cupomService.resgatar(5L, 7L, null)).thenThrow(new ConflitoException(mensagem, codigo));
 
         mvc.perform(post("/cupons/5/resgatar").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(mensagem));
+                .andExpect(jsonPath("$.message").value(mensagem))
+                .andExpect(jsonPath("$.codigo").value(codigo.name()));
     }
 
     @ParameterizedTest

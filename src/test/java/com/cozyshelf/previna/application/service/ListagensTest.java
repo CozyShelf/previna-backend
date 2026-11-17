@@ -57,9 +57,12 @@ class ListagensTest {
             new BCryptPasswordEncoder(4));
     private final ProdutoService produtoService = new ProdutoService(produtoRepository,
             mock(ImagemProdutoRepository.class));
-    private final PromocaoService promocaoService = new PromocaoService(promocaoRepository);
+    private final PromocaoService promocaoService = new PromocaoService(promocaoRepository,
+            mock(CupomResgatadoRepository.class), empresaRepository, mock(PontuacaoService.class),
+            mock(GeradorCodigoResgate.class));
     private final CupomService cupomService = new CupomService(cupomRepository, produtoRepository,
-            mock(CupomResgatadoRepository.class), empresaRepository, mock(PontuacaoService.class));
+            mock(CupomResgatadoRepository.class), empresaRepository, mock(PontuacaoService.class),
+            mock(GeradorCodigoResgate.class));
 
     private static final ListagemRequest PADRAO = new ListagemRequest(null, null, null);
 

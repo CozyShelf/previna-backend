@@ -24,5 +24,7 @@ public record ProdutoOfertaDetalheResponse(
 
     public record Cupom(Long id, BigDecimal desconto, int pontosNecessarios, LocalDate dataValidade) {}
 
-    public record Promocao(Long id, String titulo, BigDecimal desconto, LocalDate dataInicio, LocalDate dataFim) {}
+    // resgatada: a gestante do token já resgatou esta promoção, que só se resgata uma vez
+    public record Promocao(Long id, String titulo, BigDecimal desconto, LocalDate dataInicio, LocalDate dataFim,
+                           boolean resgatada) {}
 }

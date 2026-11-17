@@ -632,4 +632,268 @@ class CondicoesDeCorridaIntegracaoTest {
         assertEquals(1, agendamentos(gestante, "NAO_COMPARECEU"));
         assertEquals(1, agendamentos(gestante, "AGENDADO"));
     }
+
+    // ---- Promoção resgatável (V22: índice cupom_resgatado_promocao_uma_vez) ----
+
+    private static final String JA_RESGATADA = "Promoção já resgatada";
+    private static final String SOBREPOSTA = "Já existe promoção ativa dessa categoria nesse período";
+
+    @Autowired
+    private OfertaService ofertaService;
+
+    private Gestante gestanteComSaldo(int pontos) {
+        Gestante gestante = gestante();
+        jdbc.update("UPDATE gestante SET saldo_pontos = ? WHERE usuario_id = ?", pontos, gestante.getId());
+        return gestante;
+    }
+
+    private Promocao promocaoVigente(EmpresaParceira empresa, Categoria categoria) {
+        return promocaoRepository.save(new Promocao(empresa.getId(), "Semana do bebê", null, new BigDecimal("15"),
+                LocalDate.now().minusDays(1), LocalDate.now().plusDays(5), categoria));
+    }
+
+    private int resgatesDaPromocao(Gestante gestante, Promocao promocao) {
+        return jdbc.queryForObject("SELECT count(*) FROM cupom_resgatado WHERE gestante_id = ? AND promocao_id = ?",
+                Integer.class, gestante.getId(), promocao.getId());
+    }
+
+    private int transacoes(Gestante gestante) {
+        return jdbc.queryForObject("SELECT count(*) FROM transacao_pontos WHERE gestante_id = ?", Integer.class,
+                gestante.getId());
+    }
+
+    // Duplo toque com chaves diferentes (ou duas telas): só um resgate passa, e quem decide é o índice único.
+    // Algumas rodadas, porque a ordem de chegada varia
+    @Test
+    void doisResgatesSimultaneosDaMesmaPromocaoComChavesDiferentesGravamUmSo() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            Gestante gestante = gestanteComSaldo(70);
+            Promocao promocao = promocaoVigente(empresa(), Categoria.FRALDAS);
+
+            List<Future<CupomService.Resgate>> futuros = aoMesmoTempo(List.of(
+                    () -> promocaoService.resgatar(promocao.getId(), gestante.getId(), java.util.UUID.randomUUID()),
+                    () -> promocaoService.resgatar(promocao.getId(), gestante.getId(), java.util.UUID.randomUUID())));
+            String primeiro = desfecho(futuros.get(0));
+            String segundo = desfecho(futuros.get(1));
+
+            assertTrue(primeiro == null ^ segundo == null, "esperava um sucesso só: " + primeiro + " / " + segundo);
+            assertEquals(JA_RESGATADA, primeiro == null ? segundo : primeiro);
+            assertEquals(1, resgatesDaPromocao(gestante, promocao));
+            // Promoção não custa pontos: saldo igual e nenhuma transação
+            assertEquals(70, saldo(gestante));
+            assertEquals(0, transacoes(gestante));
+        }
+    }
+
+    @Test
+    void doisResgatesSimultaneosComAMesmaChaveDevolvemOMesmoResgate() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            Gestante gestante = gestanteComSaldo(0);
+            Promocao promocao = promocaoVigente(empresa(), Categoria.FRALDAS);
+            java.util.UUID chave = java.util.UUID.randomUUID();
+
+            List<Future<CupomService.Resgate>> futuros = aoMesmoTempo(List.of(
+                    () -> promocaoService.resgatar(promocao.getId(), gestante.getId(), chave),
+                    () -> promocaoService.resgatar(promocao.getId(), gestante.getId(), chave)));
+            CupomService.Resgate primeiro = futuros.get(0).get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
+            CupomService.Resgate segundo = futuros.get(1).get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
+
+            assertTrue(primeiro.repetido() ^ segundo.repetido(), "esperava um resgate novo e um repetido");
+            assertEquals(primeiro.cupom().codigo(), segundo.cupom().codigo());
+            assertEquals(1, resgatesDaPromocao(gestante, promocao));
+        }
+    }
+
+    @Test
+    void outraGestanteResgataAMesmaPromocao() {
+        Promocao promocao = promocaoVigente(empresa(), Categoria.FRALDAS);
+        Gestante maria = gestanteComSaldo(0);
+        Gestante joana = gestanteComSaldo(0);
+
+        promocaoService.resgatar(promocao.getId(), maria.getId(), null);
+        promocaoService.resgatar(promocao.getId(), joana.getId(), null);
+
+        assertEquals(1, resgatesDaPromocao(maria, promocao));
+        assertEquals(1, resgatesDaPromocao(joana, promocao));
+    }
+
+    @Test
+    void aMesmaGestanteResgataPromocoesDiferentesMasCadaUmaUmaVez() {
+        EmpresaParceira empresa = empresa();
+        Promocao fraldas = promocaoVigente(empresa, Categoria.FRALDAS);
+        Promocao roupas = promocaoVigente(empresa, Categoria.ROUPAS);
+        Gestante gestante = gestanteComSaldo(0);
+
+        promocaoService.resgatar(fraldas.getId(), gestante.getId(), null);
+        promocaoService.resgatar(roupas.getId(), gestante.getId(), null);
+        var erro = assertThrows(ConflitoException.class,
+                () -> promocaoService.resgatar(fraldas.getId(), gestante.getId(), null));
+
+        assertEquals(JA_RESGATADA, erro.getMessage());
+        assertEquals(1, resgatesDaPromocao(gestante, fraldas));
+        assertEquals(1, resgatesDaPromocao(gestante, roupas));
+    }
+
+    // Cupom e promoção do mesmo produto são resgates independentes; o cupom continua N vezes (promocao_id nulo não
+    // colide no índice)
+    @Test
+    void cupomDoMesmoProdutoContinuaResgatavelVariasVezes() {
+        EmpresaParceira empresa = empresa();
+        Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null, Categoria.FRALDAS,
+                null));
+        Cupom cupom = cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN,
+                LocalDate.now().plusDays(5), 30));
+        Promocao promocao = promocaoVigente(empresa, Categoria.FRALDAS);
+        Gestante gestante = gestanteComSaldo(100);
+
+        var resgatePromocao = promocaoService.resgatar(promocao.getId(), gestante.getId(), null).cupom();
+        cupomService.resgatar(cupom.getId(), gestante.getId(), null);
+        var resgateCupom = cupomService.resgatar(cupom.getId(), gestante.getId(), null).cupom();
+
+        assertEquals(com.cozyshelf.previna.domain.model.TipoResgate.PROMOCAO, resgatePromocao.tipo());
+        assertEquals(com.cozyshelf.previna.domain.model.TipoResgate.CUPOM, resgateCupom.tipo());
+        assertEquals(40, saldo(gestante));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM cupom_resgatado WHERE gestante_id = ? AND cupom_id = ?",
+                Integer.class, gestante.getId(), cupom.getId()));
+        assertEquals(1, resgatesDaPromocao(gestante, promocao));
+        assertEquals(2, transacoes(gestante));
+        // O extrato só tem os débitos dos cupons
+        var extrato = jdbc.queryForList("SELECT cupom_resgatado_id FROM transacao_pontos WHERE gestante_id = ?",
+                Long.class, gestante.getId());
+        assertFalse(extrato.contains(resgatePromocao.id()));
+    }
+
+    @Test
+    void detalheDoProdutoMarcaAPromocaoResgatadaSoParaQuemResgatou() {
+        EmpresaParceira empresa = empresa();
+        Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null, Categoria.FRALDAS,
+                null));
+        Promocao promocao = promocaoVigente(empresa, Categoria.FRALDAS);
+        Gestante maria = gestanteComSaldo(0);
+        Gestante joana = gestanteComSaldo(0);
+        promocaoService.resgatar(promocao.getId(), maria.getId(), null);
+
+        assertTrue(ofertaService.detalhar(maria.getId(), fralda.getId()).promocoes().getFirst().resgatada());
+        assertFalse(ofertaService.detalhar(joana.getId(), fralda.getId()).promocoes().getFirst().resgatada());
+    }
+
+    // ---- Uma promoção ativa por categoria em cada período (V23: exclusão promocao_sem_sobreposicao) ----
+
+    private static PromocaoRequest periodo(Categoria categoria, LocalDate inicio, LocalDate fim) {
+        return new PromocaoRequest("Semana do bebê", null, new BigDecimal("15"), inicio, fim, categoria);
+    }
+
+    private int ativas(EmpresaParceira empresa) {
+        return jdbc.queryForObject("SELECT count(*) FROM promocao WHERE empresa_id = ? AND ativo", Integer.class,
+                empresa.getId());
+    }
+
+    // Os dois leem "nenhuma sobreposta" ao mesmo tempo; o segundo INSERT espera o primeiro na exclusão e falha
+    // quando ele comita
+    @Test
+    void doisCadastrosSimultaneosSobrepostosGravamUmSo() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            EmpresaParceira empresa = empresa();
+            LocalDate hoje = LocalDate.now();
+
+            List<Future<Object>> futuros = aoMesmoTempo(List.of(
+                    () -> promocaoService.cadastrar(empresa.getId(), periodo(Categoria.FRALDAS, hoje, hoje.plusDays(7))),
+                    () -> promocaoService.cadastrar(empresa.getId(),
+                            periodo(Categoria.FRALDAS, hoje.plusDays(3), hoje.plusDays(10)))));
+            String primeiro = desfecho(futuros.get(0));
+            String segundo = desfecho(futuros.get(1));
+
+            assertTrue(primeiro == null ^ segundo == null, "esperava um sucesso só: " + primeiro + " / " + segundo);
+            assertEquals(SOBREPOSTA, primeiro == null ? segundo : primeiro);
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM promocao WHERE empresa_id = ?", Integer.class,
+                    empresa.getId()));
+        }
+    }
+
+    // Duas promoções sobrepostas, as duas desativadas; reativar as duas ao mesmo tempo deixa uma ativa só
+    @Test
+    void duasReativacoesSimultaneasQueConflitamDeixamUmaAtiva() throws Exception {
+        for (int rodada = 0; rodada < 5; rodada++) {
+            EmpresaParceira empresa = empresa();
+            LocalDate hoje = LocalDate.now();
+            Long primeira = promocaoService.cadastrar(empresa.getId(),
+                    periodo(Categoria.ROUPAS, hoje, hoje.plusDays(7))).id();
+            promocaoService.alterarAtivo(empresa.getId(), primeira, false);
+            Long segunda = promocaoService.cadastrar(empresa.getId(),
+                    periodo(Categoria.ROUPAS, hoje.plusDays(7), hoje.plusDays(14))).id();
+            promocaoService.alterarAtivo(empresa.getId(), segunda, false);
+
+            List<Future<Object>> futuros = aoMesmoTempo(List.of(
+                    () -> promocaoService.alterarAtivo(empresa.getId(), primeira, true),
+                    () -> promocaoService.alterarAtivo(empresa.getId(), segunda, true)));
+            String a = desfecho(futuros.get(0));
+            String b = desfecho(futuros.get(1));
+
+            assertTrue(a == null ^ b == null, "esperava uma reativação só: " + a + " / " + b);
+            assertEquals(SOBREPOSTA, a == null ? b : a);
+            assertEquals(1, ativas(empresa));
+        }
+    }
+
+    @Test
+    void sobrepostasEmCategoriasOuEmpresasDiferentesSaoPermitidas() {
+        EmpresaParceira loja = empresa();
+        EmpresaParceira outra = empresa();
+        LocalDate hoje = LocalDate.now();
+
+        promocaoService.cadastrar(loja.getId(), periodo(Categoria.FRALDAS, hoje, hoje.plusDays(7)));
+        promocaoService.cadastrar(loja.getId(), periodo(Categoria.ROUPAS, hoje, hoje.plusDays(7)));
+        promocaoService.cadastrar(outra.getId(), periodo(Categoria.FRALDAS, hoje, hoje.plusDays(7)));
+
+        assertEquals(2, ativas(loja));
+        assertEquals(1, ativas(outra));
+    }
+
+    @Test
+    void sobrepostaDesativadaNaoBloqueiaUmaNovaEDesativarNuncaConflita() {
+        EmpresaParceira empresa = empresa();
+        LocalDate hoje = LocalDate.now();
+        Long antiga = promocaoService.cadastrar(empresa.getId(), periodo(Categoria.FRALDAS, hoje, hoje.plusDays(7))).id();
+        promocaoService.alterarAtivo(empresa.getId(), antiga, false);
+
+        Long nova = promocaoService.cadastrar(empresa.getId(), periodo(Categoria.FRALDAS, hoje, hoje.plusDays(7))).id();
+        // Reativar a antiga agora conflita com a nova; desativar de novo não
+        var erro = assertThrows(ConflitoException.class,
+                () -> promocaoService.alterarAtivo(empresa.getId(), antiga, true));
+        promocaoService.alterarAtivo(empresa.getId(), antiga, false);
+
+        assertEquals(SOBREPOSTA, erro.getMessage());
+        assertEquals(1, ativas(empresa));
+        assertTrue(jdbc.queryForObject("SELECT ativo FROM promocao WHERE id = ?", Boolean.class, nova));
+    }
+
+    // Os dois dias são inclusos: terminar no dia 10 e começar no 11 não sobrepõe; começar no 10 sobrepõe
+    @Test
+    void periodosEncostadosNaoSobrepoemMasODiaDoFimConta() {
+        EmpresaParceira empresa = empresa();
+        LocalDate dia10 = LocalDate.now().plusDays(10);
+
+        promocaoService.cadastrar(empresa.getId(), periodo(Categoria.REMEDIOS, dia10.minusDays(5), dia10));
+        promocaoService.cadastrar(empresa.getId(), periodo(Categoria.REMEDIOS, dia10.plusDays(1), dia10.plusDays(5)));
+        var erro = assertThrows(ConflitoException.class, () -> promocaoService.cadastrar(empresa.getId(),
+                periodo(Categoria.REMEDIOS, dia10, dia10)));
+
+        assertEquals(SOBREPOSTA, erro.getMessage());
+        assertEquals(2, ativas(empresa));
+    }
+
+    @Test
+    void editarParaSobreporOutraAtivaResponde409ENaoGrava() {
+        EmpresaParceira empresa = empresa();
+        LocalDate hoje = LocalDate.now();
+        promocaoService.cadastrar(empresa.getId(), periodo(Categoria.FRALDAS, hoje, hoje.plusDays(7)));
+        Long outra = promocaoService.cadastrar(empresa.getId(),
+                periodo(Categoria.ROUPAS, hoje, hoje.plusDays(7))).id();
+
+        var erro = assertThrows(ConflitoException.class, () -> promocaoService.atualizar(empresa.getId(), outra,
+                periodo(Categoria.FRALDAS, hoje.plusDays(2), hoje.plusDays(3))));
+
+        assertEquals(SOBREPOSTA, erro.getMessage());
+        assertEquals("ROUPAS", jdbc.queryForObject("SELECT categoria FROM promocao WHERE id = ?", String.class, outra));
+    }
 }

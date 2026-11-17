@@ -10,7 +10,7 @@ skinparam class {
 }
 
 legend top right
-  Fundo branco: tabela criada nas migrações (V1 a V12).
+  Fundo branco: tabela criada nas migrações (V1 a V23).
   Fundo cinza: tabela prevista, ainda sem migração.
   • campo obrigatório (NOT NULL)
 endlegend
@@ -167,20 +167,27 @@ entity transacao_pontos {
 entity cupom_resgatado {
   * id : bigint <<PK>>
   --
-  * cupom_id : bigint <<FK>>
+  * tipo : CUPOM | PROMOCAO
+  cupom_id : bigint <<FK>> (só CUPOM)
+  promocao_id : bigint <<FK>> (só PROMOCAO)
   * gestante_id : bigint <<FK>>
   * codigo : varchar <<UK>>
   * status : ATIVO | UTILIZADO | EXPIRADO
   * data_resgate : timestamp
   data_uso : timestamp
-  .. cópia do cupom no resgate ..
-  * produto_id : bigint <<FK>>
-  * produto_nome : varchar
+  chave_idempotencia : uuid
+  .. cópia do cupom no resgate (só CUPOM) ..
+  produto_id : bigint <<FK>>
+  produto_nome : varchar
+  pontos_gastos : int
+  .. cópia da promoção no resgate (só PROMOCAO) ..
+  titulo : varchar
+  categoria : FRALDAS | ROUPAS | REMEDIOS
+  .. cópia dos dois ..
   * empresa_id : bigint <<FK>>
   * empresa_nome : varchar
   * desconto : decimal
-  * data_validade : date
-  * pontos_gastos : int
+  * data_validade : date (na promoção, a data_fim)
 }
 
 entity conteudo_informativo {
@@ -234,7 +241,8 @@ empresa_parceira ||--o{ cupom
 produto ||--o| imagem_produto
 produto ||--o{ cupom
 
-cupom ||--o{ cupom_resgatado
+cupom |o--o{ cupom_resgatado
+promocao |o--o{ cupom_resgatado
 produto ||--o{ cupom_resgatado
 empresa_parceira ||--o{ cupom_resgatado
 gestante ||--o{ cupom_resgatado
@@ -267,7 +275,18 @@ end note
 note bottom of promocao
   Sem ligação direta com produto: a promoção vale
   para todos os produtos da empresa com a mesma categoria.
-  É informativa (sem pontos nem código); desativada sai do catálogo.
+  Resgatável sem pontos, uma vez por gestante; desativada sai do catálogo.
+  Uma ATIVA só por (empresa_id, categoria) em cada período:
+  exclusão promocao_sem_sobreposicao (V23).
+end note
+
+note bottom of cupom_resgatado
+  Cupom e promoção resgatados na mesma tabela (V22).
+  CHECK cupom_resgatado_tipo_coerente: cada tipo preenche a sua cópia.
+  Promoção uma vez por gestante: índice único
+  cupom_resgatado_promocao_uma_vez (gestante_id, promocao_id);
+  no cupom promocao_id é nulo e não colide (N resgates).
+  UNIQUE (gestante_id, chave_idempotencia) (V20).
 end note
 
 @enduml

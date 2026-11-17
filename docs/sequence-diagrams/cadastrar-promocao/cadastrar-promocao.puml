@@ -33,11 +33,20 @@ else dados válidos na tela
             Controller --> Portal : 400 Bad Request
             Portal --> Empresa : Exibe mensagem para conferir o período
         else período válido
-            Service -> BD : salvarPromocao(idEmpresa, titulo, descricao,\ndesconto, dataInicio, dataFim, categoria)
-            BD --> Service : promoção salva
-            Service --> Controller : promoção
-            Controller --> Portal : 201 Created
-            Portal --> Empresa : Volta para a lista com\n"Promoção <título> cadastrada com sucesso."
+            Service -> BD : travarEmpresa(idEmpresa) (SELECT ... FOR UPDATE)
+            Service -> BD : salvarPromocao(idEmpresa, titulo, descricao,\ndesconto, dataInicio, dataFim, categoria) com flush
+
+            alt já existe promoção ativa da mesma categoria com período que se cruza\n(exclusão promocao_sem_sobreposicao)
+                BD --> Service : Erro: violação da exclusão (23P01)
+                Service --> Controller : Erro: promoção sobreposta
+                Controller --> Portal : 409 Conflict
+                Portal --> Empresa : Exibe "Já existe promoção ativa dessa categoria nesse período"
+            else sem sobreposição
+                BD --> Service : promoção salva
+                Service --> Controller : promoção
+                Controller --> Portal : 201 Created
+                Portal --> Empresa : Volta para a lista com\n"Promoção <título> cadastrada com sucesso."
+            end
         end
     end
 end
@@ -47,13 +56,22 @@ end
 Empresa -> Portal : Clica em "Desativar" (ou "Ativar") na lista de promoções
 Portal -> Controller : PUT /empresas/promocoes/{id}/ativo (ativo)
 Controller -> Service : alterarAtivo(idEmpresa do token, idPromocao, ativo)
-Service -> BD : buscarPromocao(idPromocao, idEmpresa)
+opt ativar
+    Service -> BD : travarEmpresa(idEmpresa) (SELECT ... FOR UPDATE)
+end
+Service -> BD : buscarPromocao(idPromocao, idEmpresa) (SELECT ... FOR UPDATE)
 BD --> Service : resultado
 
 alt promoção inexistente ou de outra empresa
     Service --> Controller : Erro: promoção não encontrada
     Controller --> Portal : 404 Not Found
     Portal --> Empresa : Exibe "Não foi possível alterar"
+else ativar e já existe outra ativa da mesma categoria com período que se cruza
+    Service -> BD : atualizarAtivo(idPromocao, true) com flush
+    BD --> Service : Erro: violação da exclusão (23P01)
+    Service --> Controller : Erro: promoção sobreposta
+    Controller --> Portal : 409 Conflict
+    Portal --> Empresa : Exibe "Já existe promoção ativa dessa categoria nesse período"
 else promoção da empresa
     Service -> BD : atualizarAtivo(idPromocao, ativo)
     Controller --> Portal : 200 OK
@@ -63,8 +81,12 @@ end
 note over Empresa, BD
     A promoção é geral: vale para todos os produtos da empresa na categoria escolhida, inclusive os cadastrados depois.
     Desconto para um produto específico é cupom (ver cadastrar-cupom).
-    É informativa: a gestante não gasta pontos nem recebe código. Nasce ativa; desativada (ou fora do período)
-    não aparece no catálogo de ofertas do app, e editar não muda a situação.
+    É resgatável: a gestante não gasta pontos e recebe um código, uma vez por promoção (ver resgatar-promocao).
+    Nasce ativa; desativada (ou fora do período) não aparece no catálogo de ofertas do app, e editar não muda a situação.
+    Uma ativa só por categoria em cada período (dias de início e fim inclusos): a exclusão promocao_sem_sobreposicao
+    (V23) barra no banco o cadastro, a edição (PUT /empresas/promocoes/{id}) e a ativação que se cruzam com outra ativa;
+    desativar nunca conflita. A trava da empresa enfileira as gravações simultâneas, e a segunda recebe o 409 em vez
+    de um deadlock.
 end note
 
 @enduml

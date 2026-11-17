@@ -2,7 +2,7 @@
 
 API do **Previna**, sistema que incentiva gestantes de primeira viagem a irem às consultas e aos exames do pré-natal.
 A gestante ganha pontos a cada consulta ou exame confirmado pelo médico e troca os pontos por cupons de desconto das
-empresas parceiras.
+empresas parceiras. As promoções das empresas não custam pontos: cada gestante resgata cada promoção uma vez.
 
 ## Stack
 
@@ -19,7 +19,7 @@ empresas parceiras.
 | `ADMIN`            | Portal web           | Cadastra médicos e pré-cadastra empresas parceiras                           |
 | `MEDICO`           | Portal web           | Pré-cadastra gestantes, agenda exames e consultas e confirma a realização    |
 | `EMPRESA_PARCEIRA` | Portal web           | Cadastra produtos, promoções e cupons                                        |
-| `GESTANTE`         | App mobile           | Acompanha exames e consultas, consulta os pontos e resgata cupons            |
+| `GESTANTE`         | App mobile           | Acompanha exames e consultas, consulta os pontos e resgata cupons e promoções |
 
 Contas pré-cadastradas recebem uma senha temporária; o token emitido com ela tem o papel `PRIMEIRO_ACESSO_<perfil>`
 e só serve para concluir o primeiro acesso. A gestante e a empresa nunca são lidas do caminho da URL, e sim do token.
@@ -74,13 +74,15 @@ src/main/java/com/cozyshelf/previna/
     config/         Spring Security e Spring MVC
     email/          envio de e-mails
 src/main/resources/
-  db/migration/     migrações Flyway (V1 a V21)
+  db/migration/     migrações Flyway (V1 a V23)
   db/seed/          dados de exemplo, só no profile dev
 docs/               modelo lógico, casos de uso e diagramas de sequência (ver docs/README.md)
 ```
 
 Erros seguem um padrão: dados inválidos → `400`, recurso inexistente ou de outro usuário → `404`, regra de negócio
-violada → `409`. As decisões de arquitetura estão em [`docs/README.md`](docs/README.md).
+violada → `409`. O corpo é `{"message": "..."}`; os conflitos que os fronts tratam de forma própria trazem também o
+campo `codigo` (por exemplo `PROMOCAO_JA_RESGATADA`), e os fronts decidem por ele, nunca pelo texto. A lista de códigos
+e as decisões de arquitetura estão em [`docs/README.md`](docs/README.md).
 
 ## Testes
 
@@ -97,7 +99,8 @@ mvn test
   simultâneas de ponta a ponta (servidor numa porta aleatória, token JWT, filtro de segurança e controller) em que só
   uma tem efeito, a trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), a
   idempotência do resgate, o saldo alterado só por `UPDATE` atômico, as travas do primeiro acesso e das edições, o
-  agendamento pendente único (cadastros iguais simultâneos gravam um só), o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
+  agendamento pendente único (cadastros iguais simultâneos gravam um só), o resgate único da promoção e a promoção
+  ativa sem sobreposição (resgates, cadastros e reativações simultâneos têm um efeito só), o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
   aplicadas nele); sem ela, são pulados.
 
 No ambiente do `previna-development`:

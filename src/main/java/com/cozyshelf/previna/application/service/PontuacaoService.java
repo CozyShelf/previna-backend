@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.response.AtividadePontuadaResponse;
 import com.cozyshelf.previna.application.dto.response.ExtratoResponse;
 import com.cozyshelf.previna.application.dto.response.PontuacaoResponse;
 import com.cozyshelf.previna.application.dto.response.TransacaoResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
@@ -92,7 +93,7 @@ public class PontuacaoService {
         // O WHERE confere o saldo de novo no banco: com a trava não deveria faltar, mas um débito nunca passa do saldo.
         // A exceção desfaz a transação inteira, cupom resgatado incluído.
         if (gestanteRepository.debitarPontos(gestante.getId(), pontos) == 0) {
-            throw new ConflitoException("Pontos insuficientes");
+            throw new ConflitoException("Pontos insuficientes", CodigoErro.PONTOS_INSUFICIENTES);
         }
         gestante.debitarPontos(pontos);
         return gestante.getSaldoPontos();

@@ -8,6 +8,7 @@ import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
+import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
 import com.cozyshelf.previna.domain.model.Usuario;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
@@ -16,6 +17,7 @@ import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.GestanteRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
 import com.cozyshelf.previna.domain.repository.ProdutoRepository;
+import com.cozyshelf.previna.domain.repository.PromocaoRepository;
 import com.cozyshelf.previna.domain.repository.TipoAtendimentoRepository;
 import com.cozyshelf.previna.domain.repository.UsuarioRepository;
 import com.cozyshelf.previna.infrastructure.security.JwtService;
@@ -98,6 +100,8 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
     private ProdutoRepository produtoRepository;
     @Autowired
     private CupomRepository cupomRepository;
+    @Autowired
+    private PromocaoRepository promocaoRepository;
     @Autowired
     private TipoAtendimentoRepository tipoRepository;
     @Autowired
@@ -305,10 +309,111 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
         var respostas = aoMesmoTempo(List.of(resgatar(gestante, cupom, null), resgatar(gestante, cupom, null)));
 
         assertEquals(List.of(201, 409), status(respostas));
-        assertEquals("Pontos insuficientes", corpo(comStatus(respostas, 409)).get("message").asText());
+        JsonNode conflito = corpo(comStatus(respostas, 409));
+        assertEquals("Pontos insuficientes", conflito.get("message").asText());
+        assertEquals("PONTOS_INSUFICIENTES", conflito.get("codigo").asText());
         assertEquals(40, saldo(gestante));
         assertEquals(1, resgates(gestante));
         assertEquals(1, debitos(gestante));
+    }
+
+    // ---- Resgate de promoção (V22: índice cupom_resgatado_promocao_uma_vez) ----
+
+    private EmpresaParceira empresaAtiva() {
+        long n = SEQUENCIA.incrementAndGet();
+        EmpresaParceira empresa = empresaRepository.save(new EmpresaParceira("Farmácia " + n, "%014d".formatted(n),
+                null, null, null, "empresa" + n, "hash"));
+        jdbc.update("UPDATE usuario SET status_conta = 'ATIVA' WHERE id = ?", empresa.getId());
+        return empresaRepository.findById(empresa.getId()).orElseThrow();
+    }
+
+    private Promocao promocaoVigente() {
+        long n = SEQUENCIA.incrementAndGet();
+        EmpresaParceira empresa = empresaRepository.save(new EmpresaParceira("Farmácia " + n, "%014d".formatted(n),
+                null, null, null, "empresa" + n, "hash"));
+        return promocaoRepository.save(new Promocao(empresa.getId(), "Semana do bebê", null, new BigDecimal("15"),
+                LocalDate.now(), LocalDate.now().plusDays(5), Categoria.FRALDAS));
+    }
+
+    private Callable<ResponseEntity<String>> resgatarPromocao(Gestante gestante, Promocao promocao, String chave) {
+        HttpHeaders cabecalhos = autenticado(gestante);
+        if (chave != null) {
+            cabecalhos.set("Idempotency-Key", chave);
+        }
+        return () -> http.exchange("/promocoes/{id}/resgatar", HttpMethod.POST, new HttpEntity<>(cabecalhos),
+                String.class, promocao.getId());
+    }
+
+    private Callable<ResponseEntity<String>> cadastrarPromocao(EmpresaParceira empresa, LocalDate inicio,
+                                                               LocalDate fim) {
+        HttpHeaders cabecalhos = autenticado(empresa);
+        cabecalhos.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, Object> corpo = Map.of("titulo", "Semana do bebê", "desconto", 15,
+                "dataInicio", inicio.toString(), "dataFim", fim.toString(), "categoria", "FRALDAS");
+        return () -> http.exchange("/empresas/promocoes", HttpMethod.POST, new HttpEntity<>(corpo, cabecalhos),
+                String.class);
+    }
+
+    // Duplo toque com chaves diferentes: um 201 e um 409 "Promoção já resgatada", uma linha e o saldo intacto.
+    // Algumas rodadas, porque a ordem de chegada não é forçada
+    @Test
+    void doisPostsSimultaneosDaMesmaPromocaoComChavesDiferentesResgatamUmaVez() throws Exception {
+        for (int rodada = 0; rodada < 3; rodada++) {
+            Gestante gestante = gestanteAtivaComSaldo(70);
+            Promocao promocao = promocaoVigente();
+
+            var respostas = aoMesmoTempo(List.of(
+                    resgatarPromocao(gestante, promocao, UUID.randomUUID().toString()),
+                    resgatarPromocao(gestante, promocao, UUID.randomUUID().toString())));
+
+            assertEquals(List.of(201, 409), status(respostas));
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals("Promoção já resgatada", conflito.get("message").asText());
+            assertEquals("PROMOCAO_JA_RESGATADA", conflito.get("codigo").asText());
+            JsonNode criado = corpo(comStatus(respostas, 201));
+            assertEquals("PROMOCAO", criado.get("tipo").asText());
+            assertEquals(0, criado.get("pontosGastos").asInt());
+            assertEquals(70, criado.get("saldo").asInt());
+            assertEquals(70, saldo(gestante));
+            assertEquals(1, resgates(gestante));
+            assertEquals(0, debitos(gestante));
+        }
+    }
+
+    @Test
+    void doisPostsSimultaneosDaMesmaPromocaoComAMesmaChaveDevolvemOMesmoResgate() throws Exception {
+        for (int rodada = 0; rodada < 3; rodada++) {
+            Gestante gestante = gestanteAtivaComSaldo(0);
+            Promocao promocao = promocaoVigente();
+            String chave = UUID.randomUUID().toString();
+
+            var respostas = aoMesmoTempo(List.of(resgatarPromocao(gestante, promocao, chave),
+                    resgatarPromocao(gestante, promocao, chave)));
+
+            assertEquals(List.of(200, 201), status(respostas));
+            assertEquals(corpo(comStatus(respostas, 201)).get("codigo").asText(),
+                    corpo(comStatus(respostas, 200)).get("codigo").asText());
+            assertEquals(1, resgates(gestante));
+        }
+    }
+
+    // Duplo clique no portal com períodos que se cruzam: a exclusão da V23 deixa uma ativa só
+    @Test
+    void doisCadastrosSimultaneosDePromocoesSobrepostasGravamUma() throws Exception {
+        for (int rodada = 0; rodada < 3; rodada++) {
+            EmpresaParceira empresa = empresaAtiva();
+            LocalDate hoje = LocalDate.now();
+
+            var respostas = aoMesmoTempo(List.of(cadastrarPromocao(empresa, hoje, hoje.plusDays(7)),
+                    cadastrarPromocao(empresa, hoje.plusDays(7), hoje.plusDays(14))));
+
+            assertEquals(List.of(201, 409), status(respostas));
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals("Já existe promoção ativa dessa categoria nesse período", conflito.get("message").asText());
+            assertEquals("PROMOCAO_SOBREPOSTA", conflito.get("codigo").asText());
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM promocao WHERE empresa_id = ?", Integer.class,
+                    empresa.getId()));
+        }
     }
 
     // ---- Confirmação de agendamento ----
@@ -326,8 +431,10 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
                     resolver(agendamento, "nao-compareceu")));
 
             assertEquals(List.of(200, 409), status(respostas));
-            assertEquals("Este agendamento já foi resolvido",
-                    corpo(comStatus(respostas, 409)).get("message").asText());
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals("Este agendamento já foi resolvido", conflito.get("message").asText());
+            // Conflito sem código próprio: o corpo não traz o campo
+            assertFalse(conflito.has("codigo"));
             String statusFinal = jdbc.queryForObject("SELECT status FROM agendamento WHERE id = ?", String.class,
                     agendamento.getId());
             int creditos = jdbc.queryForObject("SELECT count(*) FROM transacao_pontos WHERE agendamento_id = ?",
@@ -364,7 +471,9 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
             var respostas = aoMesmoTempo(List.of(agendar(gestante, tipo, data), agendar(gestante, tipo, data)));
 
             assertEquals(List.of(201, 409), status(respostas));
-            assertEquals(PENDENTE_REPETIDO, corpo(comStatus(respostas, 409)).get("message").asText());
+            JsonNode conflito = corpo(comStatus(respostas, 409));
+            assertEquals(PENDENTE_REPETIDO, conflito.get("message").asText());
+            assertEquals("AGENDAMENTO_PENDENTE_REPETIDO", conflito.get("codigo").asText());
             assertEquals(1, pendentes(gestante));
         }
     }
@@ -379,6 +488,7 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
 
         assertEquals(409, resposta.getStatusCode().value());
         assertEquals(PENDENTE_REPETIDO, corpo(resposta).get("message").asText());
+        assertEquals("AGENDAMENTO_PENDENTE_REPETIDO", corpo(resposta).get("codigo").asText());
         assertEquals(0, pendentes(gestante));
     }
 

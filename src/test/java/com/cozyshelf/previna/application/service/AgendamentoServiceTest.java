@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.request.ItemAgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.dto.response.AtendimentoDoDiaResponse;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
@@ -151,6 +152,7 @@ class AgendamentoServiceTest {
         var erro = assertThrows(ConflitoException.class, () -> service.agendar(dados(3L), 7L));
 
         assertEquals("Essa gestante já tem esse exame ou consulta pendente nessa data", erro.getMessage());
+        assertEquals(CodigoErro.AGENDAMENTO_PENDENTE_REPETIDO, erro.getCodigo());
     }
 
     // Servidor em outro idioma: o Hibernate não extrai o nome, mas ele continua entre aspas na mensagem
@@ -166,6 +168,7 @@ class AgendamentoServiceTest {
         var erro = assertThrows(ConflitoException.class, () -> service.agendar(dados(3L), 7L));
 
         assertEquals("Essa gestante já tem esse exame ou consulta pendente nessa data", erro.getMessage());
+        assertEquals(CodigoErro.AGENDAMENTO_PENDENTE_REPETIDO, erro.getCodigo());
     }
 
     // Outra violação não é engolida: segue para o 409 genérico do GlobalExceptionHandler

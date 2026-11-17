@@ -9,7 +9,7 @@ Cada diagrama tem a sua pasta, com o fonte (`.puml`, PlantUML) e a imagem (`.png
 
 Para gerar a imagem de novo depois de editar o fonte: `java -jar plantuml.jar -tpng <pasta>/<nome>.puml` (PlantUML 1.2024.7). O modelo lógico e os casos de uso usam o layout `smetana`, que não precisa do Graphviz.
 
-No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); as demais seguem as migrações V1 a V17.
+No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); as demais seguem as migrações V1 a V23.
 
 ## Decisões
 
@@ -43,10 +43,49 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   não é UUID, `400`. Sem o header (versões antigas do app), cada chamada é um resgate — resgatar o mesmo cupom mais de
   uma vez é permitido. A busca pela chave é feita com a gestante travada; o UNIQUE `(gestante_id, chave_idempotencia)`
   (`V20`) é a última barreira.
+- **Promoção resgatável:** a promoção não custa pontos, e cada gestante resgata cada promoção uma vez só
+  (`POST /promocoes/{id}/resgatar`, com o mesmo header `Idempotency-Key` do cupom). O resgate gera um código único,
+  com os status do cupom (`ATIVO`, `UTILIZADO`, `EXPIRADO`), válido até a `data_fim` da promoção; não há débito nem
+  `transacao_pontos`, então a promoção não aparece no extrato. Cupom e promoção do mesmo produto são resgates
+  independentes, e o cupom continua podendo ser resgatado N vezes enquanto houver pontos. Respostas: `201` resgate
+  novo; `200` mesma chave da mesma gestante; `400` chave que não é UUID; `404` promoção inexistente; `409`
+  "Promoção indisponível" (desativada, antes do início ou depois do fim, o mesmo critério do catálogo) e `409`
+  "Promoção já resgatada" (a gestante já a resgatou com outra chave ou sem chave). Quem decide o "uma vez" é o índice
+  único `cupom_resgatado_promocao_uma_vez (gestante_id, promocao_id)` (`V22`), e não uma consulta antes: o resgate grava
+  com flush e traduz a violação pelo nome do índice. No detalhe do produto (`GET /ofertas/produtos/{id}`), cada
+  promoção traz `resgatada`, montado com uma consulta só.
+- **Tabela única de resgates:** cupom e promoção resgatados ficam em `cupom_resgatado`, com a coluna `tipo` (`CUPOM` ou
+  `PROMOCAO`, `V22`). Os dois têm código, status, validade, empresa e desconto, e a empresa vai validar os dois códigos
+  do mesmo jeito; duas tabelas duplicariam a geração do código, a validação e a lista "meus resgates". Cada tipo guarda a
+  própria cópia: o cupom, `cupom_id`, produto e pontos; a promoção, `promocao_id`, título e categoria. O CHECK
+  `cupom_resgatado_tipo_coerente` amarra quais colunas cada tipo preenche, e a resposta do resgate traz o `tipo`. O
+  índice único só vale para a promoção: no cupom `promocao_id` é nulo, e nulos não colidem.
+- **Uma promoção ativa por categoria em cada período (D12):** a empresa não tem duas promoções ativas da mesma
+  categoria com períodos que se cruzam (os dois dias inclusos: uma que termina no dia 10 e outra que começa no 11 não
+  se cruzam). A exclusão `promocao_sem_sobreposicao` (`V23`, GiST com `btree_gist`, só entre as `ativo`) barra no
+  banco; cadastro, edição e ativação respondem `409` "Já existe promoção ativa dessa categoria nesse período", e
+  desativar nunca conflita. Antes de gravar, a empresa é travada (`SELECT ... FOR UPDATE`): sem essa fila, dois
+  cadastros sobrepostos simultâneos entram os dois no índice, cada um espera o outro na conferência da exclusão e o
+  PostgreSQL derruba um com `deadlock detected`, que viraria `500`. A regra continua sendo a exclusão; a fila só faz o
+  perdedor receber a violação dela.
 - **Auditoria pendente:** os diagramas de cadastro e de confirmação marcam `log_auditoria` como previsto: ainda não
   tem migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
   `agendamento.data_confirmacao`.
 - **Regra de negócio violada:** `409 Conflict` (`ConflitoException`); dados inválidos, `400 Bad Request`. A API não usa 422.
+- **Código estável nos conflitos:** os `409` que os fronts tratam de forma própria levam, ao lado de `message`, o
+  campo `codigo` com o nome de uma constante de `CodigoErro`, por exemplo
+  `{"message": "Promoção já resgatada", "codigo": "PROMOCAO_JA_RESGATADA"}`. Os demais erros não trazem o campo (nem
+  `"codigo": null`): o corpo continua `{"message": "..."}`. **Os fronts decidem pelo `codigo`, nunca pelo texto de
+  `message`**, que é só para exibir e pode mudar; renomear uma constante, por outro lado, quebra o contrato. Códigos:
+
+  | `codigo` | Quando | `message` |
+  |---|---|---|
+  | `PROMOCAO_JA_RESGATADA` | resgate de promoção que a gestante já resgatou | "Promoção já resgatada" |
+  | `PROMOCAO_INDISPONIVEL` | resgate de promoção desativada ou fora do período | "Promoção indisponível" |
+  | `PROMOCAO_SOBREPOSTA` | cadastro, edição ou ativação de promoção que cruza outra ativa da mesma categoria | "Já existe promoção ativa dessa categoria nesse período" |
+  | `CUPOM_INDISPONIVEL` | resgate de cupom desativado ou fora da validade | "Cupom indisponível" |
+  | `PONTOS_INSUFICIENTES` | resgate de cupom sem saldo (na conferência ou no débito) | "Pontos insuficientes" |
+  | `AGENDAMENTO_PENDENTE_REPETIDO` | agendamento igual a um pendente da gestante na mesma data | "Essa gestante já tem esse exame ou consulta pendente nessa data" |
 - **Autorização antes da validação:** o `@PreAuthorize` de cada rota é conferido antes de o corpo ser lido e validado
   (`AutorizacaoAntesDaValidacao`): papel errado recebe `403` mesmo com corpo inválido, sem ver as regras de validação.
 - **Primeiro acesso:** o token da senha temporária tem o papel `PRIMEIRO_ACESSO_<perfil>` (`PRIMEIRO_ACESSO_GESTANTE`,
@@ -77,7 +116,7 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
 - **Consulta pendente:** é a de status `AGENDADO`, mesmo com a data prevista já passada — o que define é o médico não
   ter registrado o desfecho. `/gestantes/agendamentos?pendentes=true|false` separa a tela inicial do histórico do app.
 - **Cálculo dos pontos:** `arredondar(tipo_atendimento.pontos_base × dados_socioeconomicos.fator_ponderacao)`, com o fator gravado em `transacao_pontos.fator_aplicado`. O fator é neutro (1,00) até a regra de ponderação ser definida.
-- **Promoção e cupom:** a promoção vale para todos os produtos da empresa em uma categoria (fraldas, roupas ou remédios); o cupom vale para um produto específico, sem quantidade, e a empresa o ativa ou desativa.
+- **Promoção e cupom:** a promoção vale para todos os produtos da empresa em uma categoria (fraldas, roupas ou remédios), do início ao fim (os dois dias inclusos), e se resgata sem pontos, uma vez por gestante; o cupom vale para um produto específico, sem quantidade, custa pontos e pode ser resgatado várias vezes. A empresa ativa ou desativa os dois.
 - **Catálogo de ofertas da gestante:** `/ofertas` lista as empresas, e cada uma os produtos com oferta: cupom válido
   (ativo e dentro da validade) ou promoção vigente da mesma empresa na categoria do produto. Produto sem categoria
   pode ter cupom, mas nunca promoção. Os filtros (busca, categoria, empresa, tipo, "cabe no meu saldo") ficam no

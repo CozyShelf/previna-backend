@@ -156,6 +156,7 @@ class MatrizAutorizacaoTest {
             Rota.get("/ofertas", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas/empresas/{empresaId}/produtos", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas/produtos/{id}", EnumSet.of(GESTANTE)),
+            Rota.post("/promocoes/{id}/resgatar", EnumSet.of(GESTANTE)),
 
             // Empresa parceira
             Rota.get("/empresas/perfil", EnumSet.of(EMPRESA_PARCEIRA)),
@@ -239,6 +240,7 @@ class MatrizAutorizacaoTest {
     @BeforeEach
     void resultadoDoResgate() {
         doReturn(new CupomService.Resgate(null, false)).when(cupomService).resgatar(any(), any(), any());
+        doReturn(new CupomService.Resgate(null, false)).when(promocaoService).resgatar(any(), any(), any());
     }
 
     @AfterEach

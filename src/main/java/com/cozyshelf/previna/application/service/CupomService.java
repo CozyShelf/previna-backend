@@ -6,6 +6,7 @@ import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -23,9 +24,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,9 +34,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class CupomService {
-    // Sem 0/O, 1/I/L: o código é lido em voz alta ou digitado no caixa da loja
-    private static final String ALFABETO_CODIGO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    private static final int TAMANHO_CODIGO = 8;
     // Os mais baratos primeiro; o id desempata
     private static final Sort MAIS_BARATOS = Sort.by("pontosNecessarios", "id");
 
@@ -46,16 +42,18 @@ public class CupomService {
     private final CupomResgatadoRepository cupomResgatadoRepository;
     private final EmpresaParceiraRepository empresaRepository;
     private final PontuacaoService pontuacaoService;
-    private final SecureRandom aleatorio = new SecureRandom();
+    private final GeradorCodigoResgate geradorCodigo;
 
     public CupomService(CupomRepository cupomRepository, ProdutoRepository produtoRepository,
                         CupomResgatadoRepository cupomResgatadoRepository,
-                        EmpresaParceiraRepository empresaRepository, PontuacaoService pontuacaoService) {
+                        EmpresaParceiraRepository empresaRepository, PontuacaoService pontuacaoService,
+                        GeradorCodigoResgate geradorCodigo) {
         this.cupomRepository = cupomRepository;
         this.produtoRepository = produtoRepository;
         this.cupomResgatadoRepository = cupomResgatadoRepository;
         this.empresaRepository = empresaRepository;
         this.pontuacaoService = pontuacaoService;
+        this.geradorCodigo = geradorCodigo;
     }
 
     @Transactional
@@ -126,7 +124,8 @@ public class CupomService {
                 .toList();
     }
 
-    // Resultado do resgate. repetido: a chave de idempotência já tinha sido usada, e o cupom é o do resgate feito antes
+    // Resultado do resgate, de cupom ou de promoção. repetido: a chave de idempotência já tinha sido usada, e o cupom é
+    // o do resgate feito antes
     public record Resgate(CupomResgatadoResponse cupom, boolean repetido) {}
 
     // Cupom, débito e saldo na mesma transação, com a gestante travada: dois resgates simultâneos não passam do saldo.
@@ -145,44 +144,23 @@ public class CupomService {
             Optional<CupomResgatado> feito = cupomResgatadoRepository
                     .findByGestanteIdAndChaveIdempotencia(idGestante, chaveIdempotencia);
             if (feito.isPresent()) {
-                return new Resgate(resposta(feito.get(), gestante.getSaldoPontos()), true);
+                return new Resgate(CupomResgatadoResponse.de(feito.get(), gestante.getSaldoPontos()), true);
             }
         }
 
         if (!cupom.disponivelEm(LocalDate.now())) {
-            throw new ConflitoException("Cupom indisponível");
+            throw new ConflitoException("Cupom indisponível", CodigoErro.CUPOM_INDISPONIVEL);
         }
         if (gestante.getSaldoPontos() < cupom.getPontosNecessarios()) {
-            throw new ConflitoException("Pontos insuficientes");
+            throw new ConflitoException("Pontos insuficientes", CodigoErro.PONTOS_INSUFICIENTES);
         }
 
         // O cupom resgatado guarda uma cópia do cupom e da empresa: editar o cupom depois não muda este resgate
         EmpresaParceira empresa = empresaRepository.findById(cupom.getEmpresaId()).orElseThrow();
         CupomResgatado resgatado = cupomResgatadoRepository.save(
-                new CupomResgatado(cupom, empresa, gestante, gerarCodigoUnico(), chaveIdempotencia));
+                new CupomResgatado(cupom, empresa, gestante, geradorCodigo.gerarCodigoUnico(), chaveIdempotencia));
         int saldo = pontuacaoService.debitarPontos(gestante, resgatado.getPontosGastos(), resgatado);
-        return new Resgate(resposta(resgatado, saldo), false);
-    }
-
-    // saldo: o atual da gestante, e não o de quando o cupom foi resgatado
-    private static CupomResgatadoResponse resposta(CupomResgatado resgatado, int saldo) {
-        return new CupomResgatadoResponse(resgatado.getId(), resgatado.getCodigo(), resgatado.getDescricao(),
-                resgatado.getEmpresaNome(), resgatado.getDataValidade(), resgatado.getStatus(),
-                resgatado.getDataResgate().atZone(ZoneId.systemDefault()).toInstant(), resgatado.getPontosGastos(),
-                saldo);
-    }
-
-    // Confere antes de usar; o UNIQUE de cupom_resgatado.codigo é a última barreira se dois resgates sortearem o mesmo
-    private String gerarCodigoUnico() {
-        String codigo;
-        do {
-            StringBuilder sorteado = new StringBuilder(TAMANHO_CODIGO);
-            for (int i = 0; i < TAMANHO_CODIGO; i++) {
-                sorteado.append(ALFABETO_CODIGO.charAt(aleatorio.nextInt(ALFABETO_CODIGO.length())));
-            }
-            codigo = sorteado.toString();
-        } while (cupomResgatadoRepository.existsByCodigo(codigo));
-        return codigo;
+        return new Resgate(CupomResgatadoResponse.de(resgatado, saldo), false);
     }
 
     private static CupomDisponivelResponse disponivel(Cupom cupom, EmpresaParceira empresa) {
