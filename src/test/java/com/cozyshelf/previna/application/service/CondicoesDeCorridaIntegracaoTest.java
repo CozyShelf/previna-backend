@@ -56,6 +56,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -77,6 +79,7 @@ import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.reset;
 
 // Requisições concorrentes sobre a mesma linha, contra um PostgreSQL de verdade: travas e gravações atômicas só se
@@ -142,7 +145,8 @@ class CondicoesDeCorridaIntegracaoTest {
 
     @BeforeEach
     void preparar() {
-        reset(fotoRepository, usuarioRepository, produtoRepository, promocaoRepository, imagemConteudoRepository);
+        reset(fotoRepository, usuarioRepository, produtoRepository, promocaoRepository, imagemConteudoRepository,
+                cupomResgatadoRepository);
         executor = Executors.newFixedThreadPool(4);
         long n = SEQUENCIA.incrementAndGet();
         medico = medicoRepository.save(new Medico("Dra. Ana", cpf(n), null, "CRM-" + n, "medico" + n, "hash", false));
@@ -907,10 +911,14 @@ class CondicoesDeCorridaIntegracaoTest {
 
     @Autowired
     private ResgateService resgateService;
-    @Autowired
+    @MockitoSpyBean
     private CupomResgatadoRepository cupomResgatadoRepository;
     @Autowired
     private GeradorCodigoResgate geradorCodigo;
+    @Autowired
+    private PlatformTransactionManager transacoes;
+
+    private static final ResgateRequest SEM_FILTRO = new ResgateRequest(null, null, null, null, null, null);
 
     // Resgate de cupom da gestante, válido até a data indicada, já com o status indicado
     private CupomResgatado resgateValidoAte(Gestante gestante, Cupom cupom, EmpresaParceira empresa,
@@ -922,23 +930,53 @@ class CondicoesDeCorridaIntegracaoTest {
         return resgate;
     }
 
+    private Cupom cupomDeFralda() {
+        EmpresaParceira empresa = empresa();
+        Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null, Categoria.FRALDAS,
+                null));
+        return cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN, LocalDate.now().plusDays(5),
+                30));
+    }
+
+    private EmpresaParceira empresaDo(Cupom cupom) {
+        return empresaRepository.findById(cupom.getEmpresaId()).orElseThrow();
+    }
+
     private String statusDoResgate(CupomResgatado resgate) {
         return jdbc.queryForObject("SELECT status FROM cupom_resgatado WHERE id = ?", String.class, resgate.getId());
     }
 
+    // Algum UPDATE em cupom_resgatado parado esperando uma trava de linha: a prova de que a disputa aconteceu
+    private boolean haUpdateDeResgateEsperandoTrava() {
+        return jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+                + " AND wait_event_type = 'Lock' AND query ILIKE 'update cupom_resgatado%'", Integer.class) > 0;
+    }
+
+    // Segura a listagem que chegar à consulta da página: o UPDATE de expiração dela já rodou (e trava as linhas
+    // vencidas), mas a transação ainda não comitou. A consulta segue de verdade depois de liberada
+    private void segurarDepoisDaExpiracao(AtomicInteger chegadas, CountDownLatch liberar) {
+        doAnswer(chamada -> {
+            chegadas.incrementAndGet();
+            assertTrue(liberar.await(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+            // O spy de um repositório do Spring Data delega ao repositório real pela resposta padrão
+            return mockingDetails(cupomResgatadoRepository).getMockCreationSettings().getDefaultAnswer()
+                    .answer(chamada);
+        }).when(cupomResgatadoRepository).daGestante(any(), any(), any(), any(), any(), any());
+    }
+
     // Duas listagens da mesma gestante ao mesmo tempo (o app aberto em dois aparelhos, ou o pull-to-refresh junto com
-    // a abertura da tela), as duas com vencidos a expirar: o UPDATE condicionado a ATIVO faz a segunda esperar a trava
-    // de linha da primeira e reavaliar o WHERE, que já não casa. Nenhuma falha, nenhum deadlock, e o UTILIZADO vencido
-    // continua UTILIZADO. Algumas rodadas, porque a ordem de chegada varia
+    // a abertura da tela), com vencidos a expirar. A disputa é forçada em toda rodada: a primeira para depois do
+    // UPDATE, sem comitar, e só é liberada quando a segunda está parada na trava de linha (e só uma chegou à consulta
+    // da página). Liberada a primeira, a segunda reavalia o WHERE, que já não casa: nenhuma falha, nenhum deadlock, e
+    // o UTILIZADO vencido continua UTILIZADO
     @Test
     void duasListagensSimultaneasExpiramOsVencidosSemErroNemDeadlock() throws Exception {
+        int rodadasComEspera = 0;
         for (int rodada = 0; rodada < 5; rodada++) {
+            reset(cupomResgatadoRepository);
             Gestante gestante = gestante();
-            EmpresaParceira empresa = empresa();
-            Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null,
-                    Categoria.FRALDAS, null));
-            Cupom cupom = cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN,
-                    LocalDate.now().plusDays(5), 30));
+            Cupom cupom = cupomDeFralda();
+            EmpresaParceira empresa = empresaDo(cupom);
             List<CupomResgatado> vencidos = new ArrayList<>();
             for (int i = 0; i < 8; i++) {
                 vencidos.add(resgateValidoAte(gestante, cupom, empresa, LocalDate.now().minusDays(1 + i),
@@ -948,11 +986,19 @@ class CondicoesDeCorridaIntegracaoTest {
                     LocalDate.now().minusDays(3), StatusCupomResgatado.UTILIZADO);
             CupomResgatado valido = resgateValidoAte(gestante, cupom, empresa, LocalDate.now(),
                     StatusCupomResgatado.ATIVO);
-            ResgateRequest semFiltro = new ResgateRequest(null, null, null, null, null, null);
+            AtomicInteger chegadas = new AtomicInteger();
+            CountDownLatch liberar = new CountDownLatch(1);
+            segurarDepoisDaExpiracao(chegadas, liberar);
 
             List<Future<PaginaResponse<ResgateResponse>>> futuros = aoMesmoTempo(List.of(
-                    () -> resgateService.listar(gestante.getId(), semFiltro),
-                    () -> resgateService.listar(gestante.getId(), semFiltro)));
+                    () -> resgateService.listar(gestante.getId(), SEM_FILTRO),
+                    () -> resgateService.listar(gestante.getId(), SEM_FILTRO)));
+            esperarAte(() -> chegadas.get() == 1 && haUpdateDeResgateEsperandoTrava());
+            // Uma passou do UPDATE e está parada; a outra espera a trava dela e não terminou
+            assertEquals(1, chegadas.get());
+            assertTrue(futuros.stream().noneMatch(Future::isDone));
+            rodadasComEspera++;
+            liberar.countDown();
 
             for (Future<PaginaResponse<ResgateResponse>> futuro : futuros) {
                 // Sem exceção (deadlock ou outra) e já com o status novo: a segunda leitura vê o que a primeira gravou
@@ -964,45 +1010,103 @@ class CondicoesDeCorridaIntegracaoTest {
                 assertEquals(1, pagina.itens().stream()
                         .filter(item -> item.status() == StatusCupomResgatado.UTILIZADO).count());
             }
+            assertEquals(2, chegadas.get());
             for (CupomResgatado vencido : vencidos) {
                 assertEquals("EXPIRADO", statusDoResgate(vencido));
             }
             assertEquals("UTILIZADO", statusDoResgate(utilizadoVencido));
             assertEquals("ATIVO", statusDoResgate(valido));
         }
+        assertEquals(5, rodadasComEspera);
     }
 
-    // A validação na loja (card #11) também será um UPDATE condicionado a ATIVO: quem chega primeiro decide, e o outro
-    // não muda nada. Aqui a validação é simulada pelo próprio UPDATE, sobre um resgate ainda válido, durante as
-    // listagens: ela nunca é desfeita, porque a expiração só pega ATIVO vencido
+    // A validação na loja (card #11) será um UPDATE condicionado a ATIVO. Aqui ela comita primeiro: validou o código
+    // (no último instante da validade, por isso a linha já está vencida quando a listagem chega) e segura a transação;
+    // a listagem fica parada na trava dessa linha, e quando a validação comita o UPDATE de expiração reavalia o WHERE
+    // e não a toca. A validação nunca é desfeita
     @Test
-    void validacaoDuranteAsListagensNaoEDesfeita() throws Exception {
+    void validacaoQueTravaPrimeiroNaoEDesfeitaPelaListagem() throws Exception {
+        TransactionTemplate emTransacao = new TransactionTemplate(transacoes);
+        int rodadasComEspera = 0;
         for (int rodada = 0; rodada < 5; rodada++) {
             Gestante gestante = gestante();
-            EmpresaParceira empresa = empresa();
-            Produto fralda = produtoRepository.save(new Produto(empresa.getId(), "Fralda RN", null,
-                    Categoria.FRALDAS, null));
-            Cupom cupom = cupomRepository.save(new Cupom(empresa.getId(), fralda, BigDecimal.TEN,
-                    LocalDate.now().plusDays(5), 30));
-            for (int i = 0; i < 5; i++) {
-                resgateValidoAte(gestante, cupom, empresa, LocalDate.now().minusDays(1), StatusCupomResgatado.ATIVO);
+            Cupom cupom = cupomDeFralda();
+            EmpresaParceira empresa = empresaDo(cupom);
+            List<CupomResgatado> vencidos = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                vencidos.add(resgateValidoAte(gestante, cupom, empresa, LocalDate.now().minusDays(1),
+                        StatusCupomResgatado.ATIVO));
             }
-            CupomResgatado validado = resgateValidoAte(gestante, cupom, empresa, LocalDate.now(),
+            CupomResgatado validado = resgateValidoAte(gestante, cupom, empresa, LocalDate.now().minusDays(1),
                     StatusCupomResgatado.ATIVO);
-            ResgateRequest semFiltro = new ResgateRequest(null, null, null, null, null, null);
+            CountDownLatch validou = new CountDownLatch(1);
+            CountDownLatch liberarValidacao = new CountDownLatch(1);
 
-            List<Future<Object>> futuros = aoMesmoTempo(List.of(
-                    () -> resgateService.listar(gestante.getId(), semFiltro),
-                    () -> jdbc.update("UPDATE cupom_resgatado SET status = 'UTILIZADO', data_uso = now()"
-                            + " WHERE id = ? AND status = 'ATIVO'", validado.getId()),
-                    () -> resgateService.listar(gestante.getId(), semFiltro)));
-            for (Future<Object> futuro : futuros) {
-                futuro.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
-            }
+            Future<Integer> validacao = executor.submit(() -> emTransacao.execute(status -> {
+                int linhas = jdbc.update("UPDATE cupom_resgatado SET status = 'UTILIZADO', data_uso = now()"
+                        + " WHERE id = ? AND status = 'ATIVO'", validado.getId());
+                validou.countDown();
+                try {
+                    assertTrue(liberarValidacao.await(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+                return linhas;
+            }));
+            assertTrue(validou.await(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+            Future<PaginaResponse<ResgateResponse>> listagem = executor.submit(
+                    () -> resgateService.listar(gestante.getId(), SEM_FILTRO));
+            esperarAte(this::haUpdateDeResgateEsperandoTrava);
+            // A listagem está parada atrás da validação, que ainda não comitou
+            assertFalse(listagem.isDone());
+            rodadasComEspera++;
+            liberarValidacao.countDown();
 
+            assertEquals(1, validacao.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+            PaginaResponse<ResgateResponse> pagina = listagem.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS);
             assertEquals("UTILIZADO", statusDoResgate(validado));
-            assertEquals(5, jdbc.queryForObject("SELECT count(*) FROM cupom_resgatado WHERE gestante_id = ?"
-                    + " AND status = 'EXPIRADO'", Integer.class, gestante.getId()));
+            assertEquals(StatusCupomResgatado.UTILIZADO, pagina.itens().stream()
+                    .filter(item -> item.id().equals(validado.getId())).findFirst().orElseThrow().status());
+            for (CupomResgatado vencido : vencidos) {
+                assertEquals("EXPIRADO", statusDoResgate(vencido));
+            }
         }
+        assertEquals(5, rodadasComEspera);
+    }
+
+    // O contrário: a listagem expira primeiro e segura a transação; a validação fica parada na trava da linha e,
+    // quando a listagem comita, reavalia o WHERE (status = 'ATIVO'), que já não casa: não valida um código expirado
+    // nem sobrescreve o status
+    @Test
+    void validacaoQueChegaDepoisDaExpiracaoNaoMudaNada() throws Exception {
+        int rodadasComEspera = 0;
+        for (int rodada = 0; rodada < 5; rodada++) {
+            reset(cupomResgatadoRepository);
+            Gestante gestante = gestante();
+            Cupom cupom = cupomDeFralda();
+            CupomResgatado alvo = resgateValidoAte(gestante, cupom, empresaDo(cupom), LocalDate.now().minusDays(1),
+                    StatusCupomResgatado.ATIVO);
+            AtomicInteger chegadas = new AtomicInteger();
+            CountDownLatch liberar = new CountDownLatch(1);
+            segurarDepoisDaExpiracao(chegadas, liberar);
+
+            Future<PaginaResponse<ResgateResponse>> listagem = executor.submit(
+                    () -> resgateService.listar(gestante.getId(), SEM_FILTRO));
+            esperarAte(() -> chegadas.get() == 1);
+            Future<Integer> validacao = executor.submit(() -> jdbc.update("UPDATE cupom_resgatado"
+                    + " SET status = 'UTILIZADO', data_uso = now() WHERE id = ? AND status = 'ATIVO'", alvo.getId()));
+            esperarAte(this::haUpdateDeResgateEsperandoTrava);
+            // A validação está parada atrás da listagem, que ainda não comitou
+            assertFalse(validacao.isDone());
+            rodadasComEspera++;
+            liberar.countDown();
+
+            assertEquals(StatusCupomResgatado.EXPIRADO,
+                    listagem.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS).itens().getFirst().status());
+            assertEquals(0, validacao.get(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+            assertEquals("EXPIRADO", statusDoResgate(alvo));
+        }
+        assertEquals(5, rodadasComEspera);
     }
 }

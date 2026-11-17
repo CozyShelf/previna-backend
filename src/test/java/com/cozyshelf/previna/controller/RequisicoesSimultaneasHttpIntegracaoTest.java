@@ -65,6 +65,7 @@ import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.reset;
 
 // Duas requisições HTTP simultâneas de ponta a ponta: servidor de verdade numa porta aleatória, filtro JWT, controller,
@@ -117,7 +118,7 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
 
     @BeforeEach
     void preparar() {
-        reset(usuarioRepository);
+        reset(usuarioRepository, cupomResgatadoRepository);
         executor = Executors.newFixedThreadPool(4);
         long n = SEQUENCIA.incrementAndGet();
         medico = medicoRepository.save(new Medico("Dra. Ana", cpf(n), null, "CRM-" + n, "medico" + n, "hash", false));
@@ -421,10 +422,16 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
 
     // ---- Meus cupons: expiração na leitura ----
 
-    @Autowired
+    @MockitoSpyBean
     private CupomResgatadoRepository cupomResgatadoRepository;
     @Autowired
     private GeradorCodigoResgate geradorCodigo;
+
+    // Algum UPDATE em cupom_resgatado parado esperando uma trava de linha: a prova de que a disputa aconteceu
+    private boolean haUpdateDeResgateEsperandoTrava() {
+        return jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+                + " AND wait_event_type = 'Lock' AND query ILIKE 'update cupom_resgatado%'", Integer.class) > 0;
+    }
 
     // Resgate do cupom pela gestante, já com a validade e o status indicados
     private CupomResgatado resgateValidoAte(Gestante gestante, Cupom cupom, LocalDate validade, String status) {
@@ -445,12 +452,15 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
         return () -> http.exchange("/gestantes/cupons", HttpMethod.GET, new HttpEntity<>(cabecalhos), String.class);
     }
 
-    // Duas aberturas de "meus cupons" ao mesmo tempo, com vencidos a expirar: as duas respondem 200 já com EXPIRADO
-    // (a segunda espera a trava de linha da primeira e o UPDATE condicionado a ATIVO não casa mais), sem deadlock nem
-    // 500, e o UTILIZADO vencido continua UTILIZADO. Algumas rodadas, porque a ordem de chegada não é forçada
+    // Duas aberturas de "meus cupons" ao mesmo tempo, com vencidos a expirar. A disputa é forçada em toda rodada: a
+    // requisição que chega à consulta da página (o UPDATE dela já rodou e trava os vencidos, sem comitar) fica parada
+    // até a outra estar esperando a trava de linha. Liberada, as duas respondem 200 já com EXPIRADO (o UPDATE da
+    // segunda reavalia o WHERE, que já não casa), sem deadlock nem 500, e o UTILIZADO vencido continua UTILIZADO
     @Test
     void duasListagensSimultaneasDosCuponsExpiramOsVencidosSemErro() throws Exception {
+        int rodadasComEspera = 0;
         for (int rodada = 0; rodada < 3; rodada++) {
+            reset(cupomResgatadoRepository);
             Gestante gestante = gestanteAtivaComSaldo(0);
             Cupom cupom = cupomDe(30);
             List<CupomResgatado> vencidos = new ArrayList<>();
@@ -460,9 +470,26 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
             CupomResgatado utilizadoVencido = resgateValidoAte(gestante, cupom, LocalDate.now().minusDays(2),
                     "UTILIZADO");
             CupomResgatado valido = resgateValidoAte(gestante, cupom, LocalDate.now().plusDays(1), "ATIVO");
+            AtomicInteger chegadas = new AtomicInteger();
+            CountDownLatch liberar = new CountDownLatch(1);
+            doAnswer(chamada -> {
+                chegadas.incrementAndGet();
+                assertTrue(liberar.await(ESPERA_SEGUNDOS, TimeUnit.SECONDS));
+                // O spy de um repositório do Spring Data delega ao repositório real pela resposta padrão
+                return mockingDetails(cupomResgatadoRepository).getMockCreationSettings().getDefaultAnswer()
+                        .answer(chamada);
+            }).when(cupomResgatadoRepository).daGestante(any(), any(), any(), any(), any(), any());
+            AtomicInteger esperas = new AtomicInteger();
 
-            var respostas = aoMesmoTempo(List.of(meusCupons(gestante), meusCupons(gestante)));
+            var respostas = aoMesmoTempo(List.of(meusCupons(gestante), meusCupons(gestante)), () -> {
+                esperarAte(() -> chegadas.get() == 1 && haUpdateDeResgateEsperandoTrava());
+                // Uma passou do UPDATE e está parada; a outra espera a trava dela, então nenhuma respondeu ainda
+                esperas.incrementAndGet();
+                liberar.countDown();
+            });
 
+            rodadasComEspera += esperas.get();
+            assertEquals(2, chegadas.get());
             assertEquals(List.of(200, 200), status(respostas));
             for (ResponseEntity<String> resposta : respostas) {
                 JsonNode pagina = corpo(resposta);
@@ -480,6 +507,7 @@ class RequisicoesSimultaneasHttpIntegracaoTest {
             assertEquals("UTILIZADO", statusDoResgate(utilizadoVencido));
             assertEquals("ATIVO", statusDoResgate(valido));
         }
+        assertEquals(3, rodadasComEspera);
     }
 
     // ---- Confirmação de agendamento ----
