@@ -72,6 +72,20 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   tem migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
   `agendamento.data_confirmacao`.
 - **Regra de negócio violada:** `409 Conflict` (`ConflitoException`); dados inválidos, `400 Bad Request`. A API não usa 422.
+- **Código estável nos conflitos:** os `409` que os fronts tratam de forma própria levam, ao lado de `message`, o
+  campo `codigo` com o nome de uma constante de `CodigoErro`, por exemplo
+  `{"message": "Promoção já resgatada", "codigo": "PROMOCAO_JA_RESGATADA"}`. Os demais erros não trazem o campo (nem
+  `"codigo": null`): o corpo continua `{"message": "..."}`. **Os fronts decidem pelo `codigo`, nunca pelo texto de
+  `message`**, que é só para exibir e pode mudar; renomear uma constante, por outro lado, quebra o contrato. Códigos:
+
+  | `codigo` | Quando | `message` |
+  |---|---|---|
+  | `PROMOCAO_JA_RESGATADA` | resgate de promoção que a gestante já resgatou | "Promoção já resgatada" |
+  | `PROMOCAO_INDISPONIVEL` | resgate de promoção desativada ou fora do período | "Promoção indisponível" |
+  | `PROMOCAO_SOBREPOSTA` | cadastro, edição ou ativação de promoção que cruza outra ativa da mesma categoria | "Já existe promoção ativa dessa categoria nesse período" |
+  | `CUPOM_INDISPONIVEL` | resgate de cupom desativado ou fora da validade | "Cupom indisponível" |
+  | `PONTOS_INSUFICIENTES` | resgate de cupom sem saldo (na conferência ou no débito) | "Pontos insuficientes" |
+  | `AGENDAMENTO_PENDENTE_REPETIDO` | agendamento igual a um pendente da gestante na mesma data | "Essa gestante já tem esse exame ou consulta pendente nessa data" |
 - **Autorização antes da validação:** o `@PreAuthorize` de cada rota é conferido antes de o corpo ser lido e validado
   (`AutorizacaoAntesDaValidacao`): papel errado recebe `403` mesmo com corpo inválido, sem ver as regras de validação.
 - **Primeiro acesso:** o token da senha temporária tem o papel `PRIMEIRO_ACESSO_<perfil>` (`PRIMEIRO_ACESSO_GESTANTE`,

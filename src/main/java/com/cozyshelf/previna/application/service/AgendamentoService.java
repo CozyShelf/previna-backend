@@ -4,6 +4,7 @@ import com.cozyshelf.previna.application.dto.request.AgendamentoRequest;
 import com.cozyshelf.previna.application.dto.response.AgendamentoResponse;
 import com.cozyshelf.previna.application.dto.response.AtendimentoDoDiaResponse;
 import com.cozyshelf.previna.application.dto.response.ConfirmacaoResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.model.Agendamento;
@@ -68,7 +69,7 @@ public class AgendamentoService {
             return agendamentoRepository.saveAllAndFlush(novos);
         } catch (DataIntegrityViolationException e) {
             if (RestricoesDoBanco.violou(e, PENDENTE_UNICO)) {
-                throw new ConflitoException(MENSAGEM_PENDENTE_REPETIDO);
+                throw new ConflitoException(MENSAGEM_PENDENTE_REPETIDO, CodigoErro.AGENDAMENTO_PENDENTE_REPETIDO);
             }
             throw e;
         }

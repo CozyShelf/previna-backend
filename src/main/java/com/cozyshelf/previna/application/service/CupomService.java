@@ -6,6 +6,7 @@ import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -148,10 +149,10 @@ public class CupomService {
         }
 
         if (!cupom.disponivelEm(LocalDate.now())) {
-            throw new ConflitoException("Cupom indisponível");
+            throw new ConflitoException("Cupom indisponível", CodigoErro.CUPOM_INDISPONIVEL);
         }
         if (gestante.getSaldoPontos() < cupom.getPontosNecessarios()) {
-            throw new ConflitoException("Pontos insuficientes");
+            throw new ConflitoException("Pontos insuficientes", CodigoErro.PONTOS_INSUFICIENTES);
         }
 
         // O cupom resgatado guarda uma cópia do cupom e da empresa: editar o cupom depois não muda este resgate

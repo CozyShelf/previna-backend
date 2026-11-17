@@ -47,7 +47,7 @@ public class ResgateCupomController {
     @ApiResponse(responseCode = "200", description = "Chave já usada: o resgate feito antes, sem novo débito")
     @ApiResponse(responseCode = "400", description = "Idempotency-Key que não é um UUID")
     @ApiResponse(responseCode = "404", description = "Cupom não encontrado")
-    @ApiResponse(responseCode = "409", description = "Cupom indisponível ou pontos insuficientes")
+    @ApiResponse(responseCode = "409", description = "Cupom indisponível (codigo CUPOM_INDISPONIVEL) ou pontos insuficientes (codigo PONTOS_INSUFICIENTES)")
     public ResponseEntity<CupomResgatadoResponse> resgatar(
             @PathVariable Long id,
             @Parameter(description = "UUID gerado pelo app a cada confirmação de resgate; opcional")

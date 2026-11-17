@@ -39,7 +39,7 @@ public class ResgatePromocaoController {
     @ApiResponse(responseCode = "200", description = "Chave já usada: o resgate feito antes")
     @ApiResponse(responseCode = "400", description = "Idempotency-Key que não é um UUID")
     @ApiResponse(responseCode = "404", description = "Promoção não encontrada")
-    @ApiResponse(responseCode = "409", description = "Promoção indisponível (inativa ou fora do período) ou já resgatada")
+    @ApiResponse(responseCode = "409", description = "Promoção indisponível, inativa ou fora do período (codigo PROMOCAO_INDISPONIVEL), ou já resgatada (codigo PROMOCAO_JA_RESGATADA)")
     public ResponseEntity<CupomResgatadoResponse> resgatar(
             @PathVariable Long id,
             @Parameter(description = "UUID gerado pelo app a cada confirmação de resgate; opcional")

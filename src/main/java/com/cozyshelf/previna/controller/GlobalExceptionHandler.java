@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
     @ExceptionHandler(ConflitoException.class)
     public ResponseEntity<Response> conflito(ConflitoException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(new Response(e.getMessage()));
+        String codigo = e.getCodigo() == null ? null : e.getCodigo().name();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new Response(e.getMessage(), codigo));
     }
 
     @ExceptionHandler(DadosInvalidosException.class)

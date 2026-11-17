@@ -80,7 +80,9 @@ docs/               modelo lógico, casos de uso e diagramas de sequência (ver 
 ```
 
 Erros seguem um padrão: dados inválidos → `400`, recurso inexistente ou de outro usuário → `404`, regra de negócio
-violada → `409`. As decisões de arquitetura estão em [`docs/README.md`](docs/README.md).
+violada → `409`. O corpo é `{"message": "..."}`; os conflitos que os fronts tratam de forma própria trazem também o
+campo `codigo` (por exemplo `PROMOCAO_JA_RESGATADA`), e os fronts decidem por ele, nunca pelo texto. A lista de códigos
+e as decisões de arquitetura estão em [`docs/README.md`](docs/README.md).
 
 ## Testes
 

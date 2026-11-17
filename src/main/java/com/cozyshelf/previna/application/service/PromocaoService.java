@@ -5,6 +5,7 @@ import com.cozyshelf.previna.application.dto.request.PromocaoRequest;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
 import com.cozyshelf.previna.application.dto.response.PromocaoResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -108,7 +109,7 @@ public class PromocaoService {
             gravacao.run();
         } catch (DataIntegrityViolationException e) {
             if (RestricoesDoBanco.violou(e, SEM_SOBREPOSICAO)) {
-                throw new ConflitoException(MENSAGEM_SOBREPOSTA);
+                throw new ConflitoException(MENSAGEM_SOBREPOSTA, CodigoErro.PROMOCAO_SOBREPOSTA);
             }
             throw e;
         }
@@ -169,7 +170,7 @@ public class PromocaoService {
         }
 
         if (!promocao.vigenteEm(LocalDate.now())) {
-            throw new ConflitoException("Promoção indisponível");
+            throw new ConflitoException("Promoção indisponível", CodigoErro.PROMOCAO_INDISPONIVEL);
         }
 
         EmpresaParceira empresa = empresaRepository.findById(promocao.getEmpresaId()).orElseThrow();
@@ -181,7 +182,7 @@ public class PromocaoService {
             cupomResgatadoRepository.saveAndFlush(resgatado);
         } catch (DataIntegrityViolationException e) {
             if (RestricoesDoBanco.violou(e, RESGATE_UMA_VEZ)) {
-                throw new ConflitoException(MENSAGEM_JA_RESGATADA);
+                throw new ConflitoException(MENSAGEM_JA_RESGATADA, CodigoErro.PROMOCAO_JA_RESGATADA);
             }
             throw e;
         }
