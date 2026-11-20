@@ -14,6 +14,7 @@ import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Produto;
+import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
@@ -34,17 +35,19 @@ public class CupomService {
     private final EmpresaParceiraRepository empresaRepository;
     private final PontuacaoService pontuacaoService;
     private final GeradorCodigoResgate geradorCodigo;
+    private final Auditoria auditoria;
 
     public CupomService(CupomRepository cupomRepository, ProdutoRepository produtoRepository,
                         CupomResgatadoRepository cupomResgatadoRepository,
                         EmpresaParceiraRepository empresaRepository, PontuacaoService pontuacaoService,
-                        GeradorCodigoResgate geradorCodigo) {
+                        GeradorCodigoResgate geradorCodigo, Auditoria auditoria) {
         this.cupomRepository = cupomRepository;
         this.produtoRepository = produtoRepository;
         this.cupomResgatadoRepository = cupomResgatadoRepository;
         this.empresaRepository = empresaRepository;
         this.pontuacaoService = pontuacaoService;
         this.geradorCodigo = geradorCodigo;
+        this.auditoria = auditoria;
     }
 
     @Transactional
@@ -105,9 +108,10 @@ public class CupomService {
     // o do resgate feito antes
     public record Resgate(CupomResgatadoResponse cupom, boolean repetido) {}
 
-    // Cupom, débito e saldo na mesma transação, com a gestante travada: dois resgates simultâneos não passam do saldo.
-    // chaveIdempotencia (opcional) identifica a confirmação no app: o duplo toque devolve o resgate já feito, sem
-    // debitar de novo. Sem chave (versões antigas do app), cada chamada é um resgate novo.
+    // Cupom, débito, saldo e log de auditoria na mesma transação, com a gestante travada: dois resgates simultâneos não
+    // passam do saldo. chaveIdempotencia (opcional) identifica a confirmação no app: o duplo toque devolve o resgate já
+    // feito, sem debitar de novo nem gravar outro log. Sem chave (versões antigas do app), cada chamada é um resgate
+    // novo.
     @Transactional
     public Resgate resgatar(Long idCupom, Long idGestante, UUID chaveIdempotencia) {
         Cupom cupom = cupomRepository.findById(idCupom)
@@ -136,8 +140,9 @@ public class CupomService {
         EmpresaParceira empresa = empresaRepository.findById(cupom.getEmpresaId()).orElseThrow();
         CupomResgatado resgatado = cupomResgatadoRepository.save(
                 new CupomResgatado(cupom, empresa, gestante, geradorCodigo.gerarCodigoUnico(), chaveIdempotencia));
-        int saldo = pontuacaoService.debitarPontos(gestante, resgatado.getPontosGastos(), resgatado);
-        return new Resgate(CupomResgatadoResponse.de(resgatado, saldo), false);
+        TransacaoPontos debito = pontuacaoService.debitarPontos(gestante, resgatado.getPontosGastos(), resgatado);
+        auditoria.cupomResgatado(resgatado, debito);
+        return new Resgate(CupomResgatadoResponse.de(resgatado, gestante.getSaldoPontos()), false);
     }
 
     private static CupomResponse resposta(Cupom cupom) {

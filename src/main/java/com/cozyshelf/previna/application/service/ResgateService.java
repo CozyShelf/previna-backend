@@ -29,9 +29,11 @@ public class ResgateService {
     static final String CODIGO_EXPIRADO = "Código expirado";
 
     private final CupomResgatadoRepository resgatadoRepository;
+    private final Auditoria auditoria;
 
-    public ResgateService(CupomResgatadoRepository resgatadoRepository) {
+    public ResgateService(CupomResgatadoRepository resgatadoRepository, Auditoria auditoria) {
         this.resgatadoRepository = resgatadoRepository;
+        this.auditoria = auditoria;
     }
 
     // ATIVO primeiro, depois UTILIZADO e EXPIRADO juntos, cada grupo do resgate mais recente para o mais antigo
@@ -56,7 +58,10 @@ public class ResgateService {
     // Vale a cópia gravada no resgate (D2): cupom ou promoção desativados ou editados depois não invalidam o código.
     // O código de outra empresa responde igual ao inexistente, para não revelar os códigos das outras.
     // noRollbackFor: o 409 do vencido sai por exceção, e o EXPIRADO gravado antes dela tem de ser comitado (sem isto
-    // o rollback o desfazia). Nos outros 409 e no 404 o UPDATE não mudou nada, então não há o que desfazer
+    // o rollback o desfazia). Nos outros 409 e no 404 o UPDATE não mudou nada, então não há o que desfazer.
+    // O log de auditoria só é gravado no caminho do 200, como o último passo antes de responder: nenhum caminho que
+    // responde erro (nem o 409 do vencido, que comita) grava log. Uma falha ao gravá-lo não é ConflitoException, então
+    // desfaz a validação inteira
     @Transactional(noRollbackFor = ConflitoException.class)
     public ValidacaoCupomResponse validar(Long idEmpresa, String codigoDigitado) {
         String codigo = normalizar(codigoDigitado);
@@ -67,8 +72,10 @@ public class ResgateService {
         // os dois comandos); os status só saem de ATIVO, nunca voltam, então a segunda volta sempre decide
         for (int tentativa = 0; tentativa < 2; tentativa++) {
             if (resgatadoRepository.utilizar(codigo, idEmpresa, agora, hoje) == 1) {
-                return resgatadoRepository.daEmpresa(codigo, idEmpresa).map(ValidacaoCupomResponse::de)
-                        .orElseThrow();
+                ResgateDaEmpresa validado = resgatadoRepository.daEmpresa(codigo, idEmpresa).orElseThrow();
+                // agora é a data de uso que o UPDATE acabou de gravar
+                auditoria.resgateValidado(idEmpresa, validado.resgate(), agora);
+                return ValidacaoCupomResponse.de(validado);
             }
             CupomResgatado resgate = resgatadoRepository.daEmpresa(codigo, idEmpresa)
                     .map(ResgateDaEmpresa::resgate)

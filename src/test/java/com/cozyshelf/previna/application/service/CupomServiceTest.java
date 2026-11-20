@@ -6,11 +6,13 @@ import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
+import com.cozyshelf.previna.domain.model.AcaoAuditoria;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.Cupom;
 import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.LogAuditoria;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
@@ -19,10 +21,13 @@ import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.CupomRepository;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
+import com.cozyshelf.previna.domain.repository.LogAuditoriaRepository;
 import com.cozyshelf.previna.domain.repository.ProdutoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.invocation.InvocationOnMock;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -44,8 +49,10 @@ class CupomServiceTest {
     private final CupomResgatadoRepository resgatadoRepository = mock(CupomResgatadoRepository.class);
     private final EmpresaParceiraRepository empresaRepository = mock(EmpresaParceiraRepository.class);
     private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
+    private final LogAuditoriaRepository logRepository = mock(LogAuditoriaRepository.class);
     private final CupomService service = new CupomService(cupomRepository, produtoRepository, resgatadoRepository,
-            empresaRepository, pontuacaoService, new GeradorCodigoResgate(resgatadoRepository));
+            empresaRepository, pontuacaoService, new GeradorCodigoResgate(resgatadoRepository),
+            new Auditoria(logRepository));
 
     private final Produto fralda = new Produto(1L, "Fralda RN", null, Categoria.FRALDAS, new BigDecimal("39.90"));
 
@@ -67,6 +74,19 @@ class CupomServiceTest {
 
     private Cupom cupomDe(int pontos) {
         return new Cupom(1L, fralda, BigDecimal.TEN, VALIDADE, pontos);
+    }
+
+    // O débito do PontuacaoService: tira os pontos da gestante e devolve a transação gravada, com o id do banco
+    private static TransacaoPontos debitar(InvocationOnMock chamada) {
+        Gestante gestante = chamada.getArgument(0);
+        int pontos = chamada.getArgument(1);
+        gestante.debitarPontos(pontos);
+        return Campos.definir(new TransacaoPontos(gestante, chamada.<CupomResgatado>getArgument(2), pontos),
+                "id", 60L);
+    }
+
+    private void semLog() {
+        verify(logRepository, never()).save(any());
     }
 
     private static CupomRequest dados(Long produto, String desconto) {
@@ -163,7 +183,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupom));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(300);
+        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenAnswer(CupomServiceTest::debitar);
 
         var resposta = service.resgatar(5L, 7L, null).cupom();
 
@@ -177,6 +197,52 @@ class CupomServiceTest {
         assertEquals(200, resposta.pontosGastos());
         assertEquals("Farmácia Vida", resposta.empresa());
         verify(pontuacaoService).debitarPontos(gestante, 200, salvo.getValue());
+    }
+
+    // Log de auditoria do resgate novo: a gestante (quem fez e de quem é), o cupom resgatado, o débito e os pontos,
+    // na hora do resgate
+    @Test
+    void resgateGravaOLogComODebito() {
+        var gestante = gestanteComSaldo(500);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.save(any())).thenAnswer(i -> Campos.definir(i.getArgument(0), "id", 9L));
+        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenAnswer(CupomServiceTest::debitar);
+
+        service.resgatar(5L, 7L, null);
+
+        var registro = ArgumentCaptor.forClass(LogAuditoria.class);
+        verify(logRepository).save(registro.capture());
+        var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
+        verify(resgatadoRepository).save(salvo.capture());
+        var log = registro.getValue();
+        assertEquals(AcaoAuditoria.CUPOM_RESGATADO, log.getAcao());
+        assertEquals(7L, log.getUsuarioId());
+        assertEquals(7L, log.getGestanteId());
+        assertEquals(9L, log.getCupomResgatadoId());
+        assertEquals(60L, log.getTransacaoPontosId());
+        assertEquals(200, log.getPontos());
+        assertNull(log.getAgendamentoId());
+        assertEquals(salvo.getValue().getDataResgate(), log.getDataHora());
+        // Depois do débito: o log aponta para a transação já gravada
+        var ordem = inOrder(pontuacaoService, logRepository);
+        ordem.verify(pontuacaoService).debitarPontos(any(), anyInt(), any());
+        ordem.verify(logRepository).save(any());
+    }
+
+    // A falha ao gravar o log sai do serviço: a transação do resgate é desfeita (provado no banco em
+    // LogAuditoriaIntegracaoTest)
+    @Test
+    void falhaAoGravarOLogDoResgateSaiDoServico() {
+        var gestante = gestanteComSaldo(500);
+        when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
+        when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
+        when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenAnswer(CupomServiceTest::debitar);
+        var falha = new DataIntegrityViolationException("falha simulada no log");
+        when(logRepository.save(any())).thenThrow(falha);
+
+        assertSame(falha, assertThrows(DataIntegrityViolationException.class, () -> service.resgatar(5L, 7L, null)));
     }
 
     @Test
@@ -273,6 +339,7 @@ class CupomServiceTest {
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Cupom indisponível", erro.getMessage());
         assertEquals(CodigoErro.CUPOM_INDISPONIVEL, erro.getCodigo());
+        semLog();
     }
 
     @Test
@@ -290,6 +357,7 @@ class CupomServiceTest {
         assertEquals(CodigoErro.PONTOS_INSUFICIENTES, erro.getCodigo());
         verify(resgatadoRepository, never()).save(any());
         verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
+        semLog();
     }
 
     @Test
@@ -298,7 +366,7 @@ class CupomServiceTest {
         when(cupomRepository.findById(5L)).thenReturn(Optional.of(cupomDe(200)));
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(0);
+        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenAnswer(CupomServiceTest::debitar);
 
         assertEquals(0, service.resgatar(5L, 7L, null).cupom().saldo());
     }
@@ -333,6 +401,7 @@ class CupomServiceTest {
 
         assertThrows(NaoEncontradoException.class, () -> service.resgatar(5L, 7L, null));
         verify(resgatadoRepository, never()).save(any());
+        semLog();
     }
 
     @Test
@@ -389,6 +458,8 @@ class CupomServiceTest {
         assertEquals(300, resgate.cupom().saldo());
         verify(resgatadoRepository, never()).save(any());
         verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
+        // O toque repetido não é um resgate novo: o log já tem o do primeiro
+        semLog();
     }
 
     @Test
@@ -410,7 +481,7 @@ class CupomServiceTest {
         when(pontuacaoService.travarGestante(7L)).thenReturn(gestante);
         when(resgatadoRepository.findByGestanteIdAndChaveIdempotencia(7L, CHAVE)).thenReturn(Optional.empty());
         when(resgatadoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenReturn(300);
+        when(pontuacaoService.debitarPontos(eq(gestante), eq(200), any())).thenAnswer(CupomServiceTest::debitar);
 
         var resgate = service.resgatar(5L, 7L, CHAVE);
 

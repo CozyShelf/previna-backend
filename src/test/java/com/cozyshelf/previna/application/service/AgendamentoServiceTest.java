@@ -8,13 +8,18 @@ import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
+import com.cozyshelf.previna.domain.model.AcaoAuditoria;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.CategoriaAtendimento;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
+import com.cozyshelf.previna.domain.model.TipoTransacao;
+import com.cozyshelf.previna.domain.model.TransacaoPontos;
+import com.cozyshelf.previna.domain.model.LogAuditoria;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
+import com.cozyshelf.previna.domain.repository.LogAuditoriaRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +28,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.cozyshelf.previna.domain.Campos;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,8 +46,9 @@ class AgendamentoServiceTest {
     private final MedicoRepository medicoRepository = mock(MedicoRepository.class);
     private final GestanteService gestanteService = mock(GestanteService.class);
     private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
+    private final LogAuditoriaRepository logRepository = mock(LogAuditoriaRepository.class);
     private final AgendamentoService service = new AgendamentoService(tipoService, agendamentoRepository,
-            medicoRepository, gestanteService, pontuacaoService);
+            medicoRepository, gestanteService, pontuacaoService, new Auditoria(logRepository));
 
     private final Medico medico = Campos.definir(
             new Medico("Dra. Ana", "11111111111", null, "CRM-SP 1", "ana", "hash", false), "id", 7L);
@@ -73,6 +80,32 @@ class AgendamentoServiceTest {
             agendamento.registrarDesfecho(status, medico);
         }
         return Campos.definir(agendamento, "id", id);
+    }
+
+    // O crédito que o PontuacaoService grava, com o id que viria do banco
+    private TransacaoPontos credito(Agendamento agendamento, int pontos) {
+        gestante.creditarPontos(pontos);
+        return Campos.definir(new TransacaoPontos(gestante, agendamento, TipoTransacao.CREDITO, pontos,
+                BigDecimal.ONE), "id", 40L);
+    }
+
+    // O registro do log de auditoria gravado (um só)
+    private LogAuditoria logGravado() {
+        var registro = ArgumentCaptor.forClass(LogAuditoria.class);
+        verify(logRepository).save(registro.capture());
+        return registro.getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<LogAuditoria> logsDoCadastro() {
+        ArgumentCaptor<Iterable<LogAuditoria>> registros = ArgumentCaptor.forClass(Iterable.class);
+        verify(logRepository).saveAll(registros.capture());
+        return (List<LogAuditoria>) registros.getValue();
+    }
+
+    private void semLog() {
+        verify(logRepository, never()).save(any());
+        verify(logRepository, never()).saveAll(any());
     }
 
     @Test
@@ -113,6 +146,35 @@ class AgendamentoServiceTest {
                 resposta.stream().map(AgendamentoResponse::status).toList());
     }
 
+    // Log de auditoria: uma linha AGENDAMENTO_CRIADO por item, com o médico do token e a gestante, sem pontos
+    @Test
+    void cadastroGravaUmLogPorAgendamento() {
+        when(tipoService.paraAgendamento(7L, 3L)).thenReturn(hemograma);
+        when(tipoService.paraAgendamento(7L, 4L)).thenReturn(consulta);
+        when(agendamentoRepository.saveAllAndFlush(any())).thenAnswer(i -> {
+            List<Agendamento> novos = i.getArgument(0);
+            for (int n = 0; n < novos.size(); n++) {
+                Campos.definir(novos.get(n), "id", 20L + n);
+            }
+            return novos;
+        });
+        var antes = LocalDateTime.now();
+
+        service.agendar(dados(3L, 4L), 7L);
+
+        var logs = logsDoCadastro();
+        assertEquals(List.of(20L, 21L), logs.stream().map(LogAuditoria::getAgendamentoId).toList());
+        for (LogAuditoria log : logs) {
+            assertEquals(AcaoAuditoria.AGENDAMENTO_CRIADO, log.getAcao());
+            assertEquals(7L, log.getUsuarioId());
+            assertEquals(1L, log.getGestanteId());
+            assertNull(log.getTransacaoPontosId());
+            assertNull(log.getCupomResgatadoId());
+            assertNull(log.getPontos());
+            assertFalse(log.getDataHora().isBefore(antes));
+        }
+    }
+
     // Tudo na mesma transação: um tipo recusado no meio da lista não deixa metade do cadastro gravada
     @Test
     void umItemInvalidoNaListaNaoGravaNenhumOutro() {
@@ -124,6 +186,7 @@ class AgendamentoServiceTest {
 
         assertEquals("Tipo de atendimento inválido", erro.getMessage());
         verify(agendamentoRepository, never()).saveAllAndFlush(any());
+        semLog();
     }
 
     @Test
@@ -137,6 +200,7 @@ class AgendamentoServiceTest {
         verify(agendamentoRepository, never()).saveAllAndFlush(any());
         // A gestante é conferida antes dos tipos, como no diagrama: 404 vem antes de 400
         verify(tipoService, never()).paraAgendamento(any(), any());
+        semLog();
     }
 
     // O índice parcial da V21 recusa o segundo pendente igual; a violação vira 409 com a mensagem própria
@@ -153,6 +217,7 @@ class AgendamentoServiceTest {
 
         assertEquals("Essa gestante já tem esse exame ou consulta pendente nessa data", erro.getMessage());
         assertEquals(CodigoErro.AGENDAMENTO_PENDENTE_REPETIDO, erro.getCodigo());
+        semLog();
     }
 
     // Servidor em outro idioma: o Hibernate não extrai o nome, mas ele continua entre aspas na mensagem
@@ -288,10 +353,7 @@ class AgendamentoServiceTest {
     void confirmaCreditaPontosEDevolveOSaldo() {
         var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
         when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
-        when(pontuacaoService.creditarPorAgendamento(pendente)).thenAnswer(i -> {
-            gestante.creditarPontos(25);
-            return 25;
-        });
+        when(pontuacaoService.creditarPorAgendamento(pendente)).thenAnswer(i -> credito(pendente, 25));
 
         var resposta = service.confirmar(5L, 7L);
 
@@ -301,6 +363,40 @@ class AgendamentoServiceTest {
         assertEquals(25, resposta.pontosCreditados());
         assertEquals(25, resposta.saldoPontos());
         assertEquals(StatusAgendamento.REALIZADO, resposta.agendamento().status());
+    }
+
+    // Log de auditoria da confirmação: o médico, a gestante, o agendamento, o crédito e os pontos, na hora gravada
+    // na confirmação
+    @Test
+    void confirmacaoGravaOLogComOCredito() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
+        when(pontuacaoService.creditarPorAgendamento(pendente)).thenAnswer(i -> credito(pendente, 25));
+
+        service.confirmar(5L, 7L);
+
+        var log = logGravado();
+        assertEquals(AcaoAuditoria.AGENDAMENTO_REALIZADO, log.getAcao());
+        assertEquals(7L, log.getUsuarioId());
+        assertEquals(1L, log.getGestanteId());
+        assertEquals(5L, log.getAgendamentoId());
+        assertEquals(40L, log.getTransacaoPontosId());
+        assertEquals(25, log.getPontos());
+        assertNull(log.getCupomResgatadoId());
+        assertEquals(pendente.getDataConfirmacao(), log.getDataHora());
+    }
+
+    // A falha ao gravar o log sai do serviço: a transação da confirmação é desfeita (provado no banco em
+    // LogAuditoriaIntegracaoTest)
+    @Test
+    void falhaAoGravarOLogDaConfirmacaoSaiDoServico() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
+        when(pontuacaoService.creditarPorAgendamento(pendente)).thenAnswer(i -> credito(pendente, 25));
+        var falha = new DataIntegrityViolationException("falha simulada no log");
+        when(logRepository.save(any())).thenThrow(falha);
+
+        assertSame(falha, assertThrows(DataIntegrityViolationException.class, () -> service.confirmar(5L, 7L)));
     }
 
     // O médico só registra o desfecho a partir do dia marcado; antes disso não há o que confirmar
@@ -315,6 +411,7 @@ class AgendamentoServiceTest {
         assertEquals("Este agendamento só pode ser resolvido a partir da data prevista", erro.getMessage());
         assertEquals(StatusAgendamento.AGENDADO, futuro.getStatus());
         verify(pontuacaoService, never()).creditarPorAgendamento(any());
+        semLog();
     }
 
     // No próprio dia já vale: a comparação é só de data, sem horário
@@ -337,6 +434,7 @@ class AgendamentoServiceTest {
 
         assertEquals("Este agendamento já foi resolvido", erro.getMessage());
         verify(pontuacaoService, never()).creditarPorAgendamento(any());
+        semLog();
     }
 
     @Test
@@ -361,6 +459,7 @@ class AgendamentoServiceTest {
         assertEquals("Agendamento não encontrado", erro.getMessage());
         assertEquals(StatusAgendamento.AGENDADO, pendente.getStatus());
         verify(pontuacaoService, never()).creditarPorAgendamento(any());
+        semLog();
     }
 
     @Test
@@ -370,6 +469,7 @@ class AgendamentoServiceTest {
         var erro = assertThrows(NaoEncontradoException.class, () -> service.confirmar(99L, 7L));
 
         assertEquals("Agendamento não encontrado", erro.getMessage());
+        semLog();
     }
 
     @Test
@@ -387,12 +487,32 @@ class AgendamentoServiceTest {
         verify(pontuacaoService, never()).creditarPorAgendamento(any());
     }
 
+    // Log de auditoria do não comparecimento: o médico, a gestante e o agendamento, sem transação nem pontos
+    @Test
+    void naoComparecimentoGravaOLogSemPontos() {
+        var pendente = agendamento(5L, StatusAgendamento.AGENDADO, LocalDate.now());
+        when(agendamentoRepository.findParaResolver(5L)).thenReturn(Optional.of(pendente));
+
+        service.registrarNaoComparecimento(5L, 7L);
+
+        var log = logGravado();
+        assertEquals(AcaoAuditoria.AGENDAMENTO_NAO_COMPARECEU, log.getAcao());
+        assertEquals(7L, log.getUsuarioId());
+        assertEquals(1L, log.getGestanteId());
+        assertEquals(5L, log.getAgendamentoId());
+        assertNull(log.getTransacaoPontosId());
+        assertNull(log.getPontos());
+        assertNull(log.getCupomResgatadoId());
+        assertEquals(pendente.getDataConfirmacao(), log.getDataHora());
+    }
+
     @Test
     void naoComparecimentoEmItemJaResolvidoDaConflito() {
         when(agendamentoRepository.findParaResolver(5L))
                 .thenReturn(Optional.of(agendamento(5L, StatusAgendamento.REALIZADO, LocalDate.now())));
 
         assertThrows(ConflitoException.class, () -> service.registrarNaoComparecimento(5L, 7L));
+        semLog();
     }
 
     // Duas confirmações ao mesmo tempo leem AGENDADO; o UNIQUE de agendamento_id derruba a segunda,
@@ -407,6 +527,7 @@ class AgendamentoServiceTest {
         assertThrows(DataIntegrityViolationException.class, () -> service.confirmar(5L, 7L));
 
         assertEquals(0, gestante.getSaldoPontos());
+        semLog();
     }
 
     // No app o id vem do token, nunca do caminho: a gestante não alcança a lista de outra

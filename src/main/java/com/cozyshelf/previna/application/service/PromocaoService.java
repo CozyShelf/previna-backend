@@ -40,15 +40,17 @@ public class PromocaoService {
     private final EmpresaParceiraRepository empresaRepository;
     private final PontuacaoService pontuacaoService;
     private final GeradorCodigoResgate geradorCodigo;
+    private final Auditoria auditoria;
 
     public PromocaoService(PromocaoRepository promocaoRepository, CupomResgatadoRepository cupomResgatadoRepository,
                            EmpresaParceiraRepository empresaRepository, PontuacaoService pontuacaoService,
-                           GeradorCodigoResgate geradorCodigo) {
+                           GeradorCodigoResgate geradorCodigo, Auditoria auditoria) {
         this.promocaoRepository = promocaoRepository;
         this.cupomResgatadoRepository = cupomResgatadoRepository;
         this.empresaRepository = empresaRepository;
         this.pontuacaoService = pontuacaoService;
         this.geradorCodigo = geradorCodigo;
+        this.auditoria = auditoria;
     }
 
     @Transactional
@@ -150,7 +152,8 @@ public class PromocaoService {
     // ---- Resgate pela gestante ----
 
     // Promoção resgatável: não custa pontos e cada gestante a resgata uma vez só, com um código próprio que vale até
-    // o fim da promoção. Mesmo fluxo do resgate de cupom (CupomService.resgatar), sem débito.
+    // o fim da promoção. Mesmo fluxo do resgate de cupom (CupomService.resgatar), sem débito; o resgate novo vai para o
+    // log de auditoria, e o toque repetido não.
     // A promoção é lida sem trava: o "uma vez" é do índice único, e ativo e período são conferidos agora
     @Transactional
     public CupomService.Resgate resgatar(Long idPromocao, Long idGestante, UUID chaveIdempotencia) {
@@ -186,6 +189,7 @@ public class PromocaoService {
             }
             throw e;
         }
+        auditoria.promocaoResgatada(resgatado);
         // Sem débito: o saldo continua o mesmo
         return new CupomService.Resgate(CupomResgatadoResponse.de(resgatado, gestante.getSaldoPontos()), false);
     }
