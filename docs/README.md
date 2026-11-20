@@ -83,6 +83,24 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   vencido continua `UTILIZADO`. Duas listagens simultâneas da mesma gestante não se atrapalham: a segunda espera a
   trava de linha da primeira, reavalia o `WHERE`, que já não casa, e lê o que a primeira gravou. Por isso a transação
   da leitura não é `readOnly`.
+- **Validar Cupom (código na loja):** `POST /empresas/cupons/validar`, só o perfil `EMPRESA_PARCEIRA`, corpo
+  `{"codigo": "AB12CD34"}`, vale para cupom e promoção. O código é aceito com espaços nas pontas e em minúsculas (o
+  gerado é sempre maiúsculo); vazio ou em branco, `400`. A troca para `UTILIZADO` é **um `UPDATE` só**:
+  `SET status = 'UTILIZADO', data_uso = :agora WHERE codigo = :codigo AND empresa_id = :empresa AND status = 'ATIVO'
+  AND data_validade >= :hoje`, sem ler a linha antes para decidir, sem trava em memória. Duas validações simultâneas
+  do mesmo código: a segunda espera a trava de linha da primeira, reavalia o `WHERE`, que já não casa, e recebe
+  `409`. Só quando o `UPDATE` não mudou nada o resgate é relido, para dizer por quê: não achou (inexistente ou de
+  outra empresa: a mesma consulta, filtrada pela empresa do token) `404` `RESGATE_NAO_ENCONTRADO`; `UTILIZADO`,
+  `409` `RESGATE_JA_UTILIZADO` com a `dataUso` do primeiro uso no corpo; `EXPIRADO`, ou `ATIVO` vencido (que antes
+  de responder vira `EXPIRADO`, com o `UPDATE` também condicionado a `ATIVO`; o `409` não desfaz a transação,
+  `noRollbackFor`, senão o `EXPIRADO` se perdia), `409` `RESGATE_EXPIRADO`. O `UTILIZADO`
+  vencido continua "já utilizado". `:agora` e `:hoje` vêm da aplicação (a mesma hora da `data_resgate` e da expiração
+  na leitura), e não do `now()` do banco. Vale a cópia do resgate (D2): cupom ou promoção desativados ou editados
+  depois não invalidam o código, e a resposta traz o desconto e a validade copiados. O `200`
+  (`ValidacaoCupomResponse`) traz `id`, `tipo`, `codigo`, `titulo` (só promoção), `produtoNome` (só cupom),
+  `categoria` e `desconto` (como em "meus cupons"), `validade`, `dataResgate`, `dataUso` e `gestanteNome` — da
+  gestante, só o nome. Os nulos vão no JSON. Depois da validação, o app da gestante vê o resgate `UTILIZADO` com a
+  mesma `dataUso`.
 - **Uma promoção ativa por categoria em cada período (D12):** a empresa não tem duas promoções ativas da mesma
   categoria com períodos que se cruzam (os dois dias inclusos: uma que termina no dia 10 e outra que começa no 11 não
   se cruzam). A exclusão `promocao_sem_sobreposicao` (`V23`, GiST com `btree_gist`, só entre as `ativo`) barra no
@@ -95,10 +113,13 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   tem migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
   `agendamento.data_confirmacao`.
 - **Regra de negócio violada:** `409 Conflict` (`ConflitoException`); dados inválidos, `400 Bad Request`. A API não usa 422.
-- **Código estável nos conflitos:** os `409` que os fronts tratam de forma própria levam, ao lado de `message`, o
-  campo `codigo` com o nome de uma constante de `CodigoErro`, por exemplo
+- **Código estável nos erros:** os `409` (e os `404`) que os fronts tratam de forma própria levam, ao lado de
+  `message`, o campo `codigo` com o nome de uma constante de `CodigoErro`, por exemplo
   `{"message": "Promoção já resgatada", "codigo": "PROMOCAO_JA_RESGATADA"}`. Os demais erros não trazem o campo (nem
-  `"codigo": null`): o corpo continua `{"message": "..."}`. **Os fronts decidem pelo `codigo`, nunca pelo texto de
+  `"codigo": null`): o corpo continua `{"message": "..."}`. O código já utilizado leva também `dataUso` (ISO-8601,
+  como as datas de "meus cupons"):
+  `{"message": "Código já utilizado", "codigo": "RESGATE_JA_UTILIZADO", "dataUso": "2026-11-19T14:05:00Z"}`; nos
+  outros erros o campo não aparece. **Os fronts decidem pelo `codigo`, nunca pelo texto de
   `message`**, que é só para exibir e pode mudar; renomear uma constante, por outro lado, quebra o contrato. Códigos:
 
   | `codigo` | Quando | `message` |
@@ -109,6 +130,9 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   | `CUPOM_INDISPONIVEL` | resgate de cupom desativado ou fora da validade | "Cupom indisponível" |
   | `PONTOS_INSUFICIENTES` | resgate de cupom sem saldo (na conferência ou no débito) | "Pontos insuficientes" |
   | `AGENDAMENTO_PENDENTE_REPETIDO` | agendamento igual a um pendente da gestante na mesma data | "Essa gestante já tem esse exame ou consulta pendente nessa data" |
+  | `RESGATE_NAO_ENCONTRADO` (`404`) | validação de código inexistente ou de outra empresa (a mesma resposta) | "Código não encontrado" |
+  | `RESGATE_JA_UTILIZADO` | validação de código já validado; o corpo traz `dataUso` | "Código já utilizado" |
+  | `RESGATE_EXPIRADO` | validação de código vencido (gravado como `EXPIRADO` antes de responder) | "Código expirado" |
 - **Autorização antes da validação:** o `@PreAuthorize` de cada rota é conferido antes de o corpo ser lido e validado
   (`AutorizacaoAntesDaValidacao`): papel errado recebe `403` mesmo com corpo inválido, sem ver as regras de validação.
 - **Primeiro acesso:** o token da senha temporária tem o papel `PRIMEIRO_ACESSO_<perfil>` (`PRIMEIRO_ACESSO_GESTANTE`,
@@ -147,4 +171,4 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
 - **Cópia do cupom no resgate:** `cupom_resgatado` guarda produto, empresa, desconto, validade e pontos do momento do
   resgate (`V17`). A resposta do resgate e o extrato vêm dessa cópia: editar o cupom ou renomear o produto depois não
   muda o que a gestante resgatou. `cupom_id` continua, para saber de onde o resgate veio.
-- **Validação de cupom:** cupom de outra empresa tem a mesma resposta do código inexistente (404); o cupom já resgatado continua válido se a empresa desativar o cupom depois.
+- **Validação de cupom:** cupom de outra empresa tem a mesma resposta do código inexistente (404); o cupom já resgatado continua válido se a empresa desativar o cupom depois (ver "Validar Cupom" acima).
