@@ -23,7 +23,6 @@ import com.cozyshelf.previna.domain.repository.ProdutoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -155,22 +154,6 @@ class CupomServiceTest {
         when(cupomRepository.findByIdAndEmpresaIdParaAtualizar(5L, 2L)).thenReturn(Optional.empty());
 
         assertThrows(NaoEncontradoException.class, () -> service.alterarAtivo(2L, 5L, false));
-    }
-
-    @Test
-    void listaDisponiveisSoAtivosDentroDaValidadeComAEmpresa() {
-        var cupom = cupomDe(200);
-        when(cupomRepository.findByAtivoTrueAndDataValidadeGreaterThanEqual(eq(LocalDate.now()), any(Sort.class)))
-                .thenReturn(List.of(cupom));
-        when(empresaRepository.findAllById(List.of(1L))).thenReturn(List.of(farmacia));
-
-        var disponiveis = service.listarDisponiveis();
-
-        assertEquals(1, disponiveis.size());
-        assertEquals("Farmácia Vida", disponiveis.getFirst().empresa().nome());
-        assertEquals("Fralda RN", disponiveis.getFirst().produto());
-        assertEquals(Categoria.FRALDAS, disponiveis.getFirst().categoria());
-        assertEquals(200, disponiveis.getFirst().pontosNecessarios());
     }
 
     @Test
@@ -382,28 +365,6 @@ class CupomServiceTest {
             codigos.add(codigo);
         }
         assertEquals(200, codigos.size());
-    }
-
-    @Test
-    void listaComADataDeHojeEOsMaisBaratosPrimeiro() {
-        when(cupomRepository.findByAtivoTrueAndDataValidadeGreaterThanEqual(any(), any())).thenReturn(List.of());
-
-        assertTrue(service.listarDisponiveis().isEmpty());
-
-        var ordem = ArgumentCaptor.forClass(Sort.class);
-        verify(cupomRepository).findByAtivoTrueAndDataValidadeGreaterThanEqual(eq(LocalDate.now()), ordem.capture());
-        assertEquals(Sort.Direction.ASC, ordem.getValue().getOrderFor("pontosNecessarios").getDirection());
-        assertNotNull(ordem.getValue().getOrderFor("id"));
-    }
-
-    @Test
-    void listaBuscaCadaEmpresaUmaVezSo() {
-        when(cupomRepository.findByAtivoTrueAndDataValidadeGreaterThanEqual(any(), any()))
-                .thenReturn(List.of(cupomDe(10), cupomDe(20), cupomDe(30)));
-        when(empresaRepository.findAllById(List.of(1L))).thenReturn(List.of(farmacia));
-
-        assertEquals(3, service.listarDisponiveis().size());
-        verify(empresaRepository).findAllById(List.of(1L));
     }
 
     // ---- Idempotência: o duplo toque no app ----

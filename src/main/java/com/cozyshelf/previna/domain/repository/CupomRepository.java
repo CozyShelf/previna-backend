@@ -32,11 +32,6 @@ public interface CupomRepository extends JpaRepository<Cupom, Long>, JpaSpecific
     @Query("select c from Cupom c where c.id = :id and c.empresaId = :empresaId")
     Optional<Cupom> findByIdAndEmpresaIdParaAtualizar(@Param("id") Long id, @Param("empresaId") Long empresaId);
 
-    // Cupons que a gestante pode resgatar: ativos e dentro da validade, de todas as empresas
-    // shortcut: a lista vai inteira, sem paginação (dezenas de cupons); paginar se passar de centenas
-    @EntityGraph(attributePaths = "produto")
-    List<Cupom> findByAtivoTrueAndDataValidadeGreaterThanEqual(LocalDate dia, Sort ordem);
-
     // Cupons válidos (ativos e dentro da validade) dos produtos do catálogo de ofertas
     @Query("select c from Cupom c where c.produto.id in :produtos and c.ativo = true and c.dataValidade >= :dia")
     List<Cupom> validos(@Param("produtos") Collection<Long> produtos, @Param("dia") LocalDate dia, Sort ordem);

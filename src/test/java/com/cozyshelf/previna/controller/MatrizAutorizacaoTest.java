@@ -152,7 +152,6 @@ class MatrizAutorizacaoTest {
             Rota.put("/gestantes/tutorial-concluido", EnumSet.of(GESTANTE)),
             Rota.get("/gestantes/pontuacao", EnumSet.of(GESTANTE)),
             Rota.get("/gestantes/extrato", EnumSet.of(GESTANTE)),
-            Rota.get("/cupons/disponiveis", EnumSet.of(GESTANTE)),
             Rota.post("/cupons/{id}/resgatar", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas/empresas/{empresaId}/produtos", EnumSet.of(GESTANTE)),
@@ -322,6 +321,15 @@ class MatrizAutorizacaoTest {
         Set<String> naMatriz = ROTAS.stream().map(Rota::toString).collect(Collectors.toCollection(TreeSet::new));
 
         assertEquals(mapeadas, naMatriz);
+    }
+
+    // GET /cupons/disponiveis foi substituída pelo catálogo GET /ofertas (D4). Com todos os controllers no ar e a
+    // gestante (quem a usava) autenticada, a rota não cai em nenhum outro mapeamento: 404, sem chegar a serviço
+    @Test
+    void cuponsDisponiveisNaoExisteMais() throws Exception {
+        mvc.perform(request(HttpMethod.GET, "/cupons/disponiveis").header("Authorization", token(GESTANTE)))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(servicos());
     }
 
     private String token(Papel papel) {

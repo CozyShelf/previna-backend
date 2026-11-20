@@ -2,7 +2,6 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.ListagemRequest;
-import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResponse;
 import com.cozyshelf.previna.application.dto.response.PaginaResponse;
@@ -20,23 +19,15 @@ import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
 import com.cozyshelf.previna.domain.repository.Filtros;
 import com.cozyshelf.previna.domain.repository.ProdutoRepository;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 public class CupomService {
-    // Os mais baratos primeiro; o id desempata
-    private static final Sort MAIS_BARATOS = Sort.by("pontosNecessarios", "id");
-
     private final CupomRepository cupomRepository;
     private final ProdutoRepository produtoRepository;
     private final CupomResgatadoRepository cupomResgatadoRepository;
@@ -110,20 +101,6 @@ public class CupomService {
                 .orElseThrow(() -> new DadosInvalidosException("Produto não pertence à empresa"));
     }
 
-    // Cupons que a gestante pode resgatar, de todas as empresas: ativos e dentro da validade, os mais baratos primeiro.
-    // O app agrupa por empresa.
-    @Transactional(readOnly = true)
-    public List<CupomDisponivelResponse> listarDisponiveis() {
-        List<Cupom> cupons = cupomRepository.findByAtivoTrueAndDataValidadeGreaterThanEqual(LocalDate.now(),
-                MAIS_BARATOS);
-        Map<Long, EmpresaParceira> empresas = empresaRepository
-                .findAllById(cupons.stream().map(Cupom::getEmpresaId).distinct().toList()).stream()
-                .collect(Collectors.toMap(EmpresaParceira::getId, Function.identity()));
-        return cupons.stream()
-                .map(cupom -> disponivel(cupom, empresas.get(cupom.getEmpresaId())))
-                .toList();
-    }
-
     // Resultado do resgate, de cupom ou de promoção. repetido: a chave de idempotência já tinha sido usada, e o cupom é
     // o do resgate feito antes
     public record Resgate(CupomResgatadoResponse cupom, boolean repetido) {}
@@ -161,15 +138,6 @@ public class CupomService {
                 new CupomResgatado(cupom, empresa, gestante, geradorCodigo.gerarCodigoUnico(), chaveIdempotencia));
         int saldo = pontuacaoService.debitarPontos(gestante, resgatado.getPontosGastos(), resgatado);
         return new Resgate(CupomResgatadoResponse.de(resgatado, saldo), false);
-    }
-
-    private static CupomDisponivelResponse disponivel(Cupom cupom, EmpresaParceira empresa) {
-        Produto produto = cupom.getProduto();
-        var dadosEmpresa = empresa == null ? null : new CupomDisponivelResponse.Empresa(empresa.getId(),
-                empresa.getRazaoSocial(), empresa.getSegmento(), empresa.getLogoUrl());
-        return new CupomDisponivelResponse(cupom.getId(), cupom.getDescricao(), produto.getNome(),
-                produto.getCategoria(), produto.getImagemUrl(), cupom.getDesconto(), cupom.getDataValidade(),
-                cupom.getPontosNecessarios(), dadosEmpresa);
     }
 
     private static CupomResponse resposta(Cupom cupom) {
