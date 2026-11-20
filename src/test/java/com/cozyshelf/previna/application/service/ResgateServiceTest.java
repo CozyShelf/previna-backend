@@ -7,21 +7,25 @@ import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
+import com.cozyshelf.previna.domain.model.AcaoAuditoria;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.Cupom;
 import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.LogAuditoria;
 import com.cozyshelf.previna.domain.model.Produto;
 import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
 import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
+import com.cozyshelf.previna.domain.repository.LogAuditoriaRepository;
 import com.cozyshelf.previna.domain.repository.ResgateDaEmpresa;
 import com.cozyshelf.previna.domain.repository.ResgateDaGestante;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -45,7 +49,8 @@ class ResgateServiceTest {
     private static final LocalDate HOJE = LocalDate.now();
 
     private final CupomResgatadoRepository repository = mock(CupomResgatadoRepository.class);
-    private final ResgateService service = new ResgateService(repository);
+    private final LogAuditoriaRepository logRepository = mock(LogAuditoriaRepository.class);
+    private final ResgateService service = new ResgateService(repository, new Auditoria(logRepository));
 
     private final EmpresaParceira loja = Campos.definir(new EmpresaParceira("Loja X", "12345678000190", null, null,
             null, "loja", "hash"), "id", 3L);
@@ -230,6 +235,42 @@ class ResgateServiceTest {
         verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
     }
 
+    // Log de auditoria da validação: a empresa, a gestante do resgate e o resgate, sem pontos, na mesma hora gravada
+    // como data de uso
+    @Test
+    void validacaoGravaOLogComAEmpresaEAHoraDoUso() {
+        when(repository.utilizar(any(), any(), any(), any())).thenReturn(1);
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgateDeCupom())));
+
+        service.validar(3L, "AB12CD34");
+
+        var agora = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(repository).utilizar(eq("AB12CD34"), eq(3L), agora.capture(), any());
+        var registro = ArgumentCaptor.forClass(LogAuditoria.class);
+        verify(logRepository).save(registro.capture());
+        var log = registro.getValue();
+        assertEquals(AcaoAuditoria.RESGATE_VALIDADO, log.getAcao());
+        assertEquals(3L, log.getUsuarioId());
+        assertEquals(7L, log.getGestanteId());
+        assertEquals(12L, log.getCupomResgatadoId());
+        assertNull(log.getTransacaoPontosId());
+        assertNull(log.getPontos());
+        assertNull(log.getAgendamentoId());
+        assertEquals(agora.getValue(), log.getDataHora());
+    }
+
+    // A falha ao gravar o log não é ConflitoException: sai do serviço e desfaz a validação, apesar do noRollbackFor
+    // (provado no banco em LogAuditoriaIntegracaoTest)
+    @Test
+    void falhaAoGravarOLogDaValidacaoNaoEConflito() {
+        when(repository.utilizar(any(), any(), any(), any())).thenReturn(1);
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgateDeCupom())));
+        var falha = new DataIntegrityViolationException("falha simulada no log");
+        when(logRepository.save(any())).thenThrow(falha);
+
+        assertSame(falha, assertThrows(DataIntegrityViolationException.class, () -> service.validar(3L, "AB12CD34")));
+    }
+
     // A data de uso gravada é a hora da aplicação, e a data de hoje é a dela
     @Test
     void usaAHoraDaAplicacaoNoUpdate() {
@@ -272,6 +313,7 @@ class ResgateServiceTest {
         assertEquals("Código não encontrado", erro.getMessage());
         assertEquals(CodigoErro.RESGATE_NAO_ENCONTRADO, erro.getCodigo());
         verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+        verify(logRepository, never()).save(any());
     }
 
     @Test
@@ -287,6 +329,7 @@ class ResgateServiceTest {
         assertEquals(LocalDateTime.of(2026, 11, 19, 11, 5).atZone(ZoneId.systemDefault()).toInstant(),
                 erro.getDataUso());
         verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+        verify(logRepository, never()).save(any());
     }
 
     @Test
@@ -300,6 +343,7 @@ class ResgateServiceTest {
         assertEquals(CodigoErro.RESGATE_EXPIRADO, erro.getCodigo());
         assertNull(erro.getDataUso());
         verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+        verify(logRepository, never()).save(any());
     }
 
     // Vencido e ainda ATIVO: o UPDATE não o validou; grava EXPIRADO (condicionado a ATIVO) antes de responder
@@ -315,6 +359,7 @@ class ResgateServiceTest {
         ordem.verify(repository).utilizar(eq("AB12CD34"), eq(3L), any(), eq(HOJE));
         ordem.verify(repository).daEmpresa("AB12CD34", 3L);
         ordem.verify(repository).expirarCodigoSeVencido("AB12CD34", 3L, HOJE);
+        verify(logRepository, never()).save(any());
     }
 
     // O resgate só ficou visível depois do UPDATE (comitado entre os dois comandos): tenta o UPDATE de novo
@@ -338,5 +383,6 @@ class ResgateServiceTest {
         assertThrows(IllegalStateException.class, () -> service.validar(3L, "AB12CD34"));
 
         verify(repository, times(2)).utilizar(any(), any(), any(), any());
+        verify(logRepository, never()).save(any());
     }
 }

@@ -9,6 +9,7 @@ participant "OfertaService" as Catalogo
 control "ResgateCupomController" as Controller
 participant "CupomService" as Service
 participant "PontuacaoService" as Pontuacao
+participant "Auditoria" as Auditoria
 database "Banco de Dados" as BD
 
 note over Gestante, Controller
@@ -80,14 +81,18 @@ else resgate válido
     Service -> Pontuacao : debitarPontos(idGestante, pontosNecessarios, idCupomResgatado)
     Pontuacao -> BD : registrarTransacao(tipo = DEBITO, pontos, idCupomResgatado)
     Pontuacao -> BD : UPDATE saldo_pontos = saldo_pontos - pontos\n WHERE saldo_pontos >= pontos
-    Pontuacao --> Service : novo saldo
+    Pontuacao --> Service : transação de débito (o saldo novo fica na gestante)
+    Service -> Auditoria : cupomResgatado(cupom resgatado, débito)
+    Auditoria -> BD : INSERT log_auditoria (acao = CUPOM_RESGATADO, usuario = gestante = idGestante,\ncupom_resgatado, transacao_pontos = débito, pontos, data_hora = data do resgate)
     Service --> Controller : cupom resgatado + código
     Controller --> App : 201 Created
     App --> Gestante : Exibe código do cupom e novo saldo
 end
 
 note over Gestante, BD
-    Débito, transação e cupom resgatado na mesma transação, com a gestante bloqueada (SELECT ... FOR UPDATE):
+    Débito, transação, cupom resgatado e log de auditoria (RF18) na mesma transação, com a gestante bloqueada
+    (SELECT ... FOR UPDATE); se a gravação do log falhar, o resgate e o débito são desfeitos. Os erros e o toque
+    repetido (200) não gravam log.
     dois resgates simultâneos não passam do saldo. O cupom não tem quantidade: a empresa o tira do ar desativando-o.
     O cupom resgatado guarda uma cópia do cupom: editá-lo depois não muda o resgate nem o extrato.
     O duplo toque manda a mesma Idempotency-Key: o segundo espera na trava e recebe o resgate do primeiro, sem

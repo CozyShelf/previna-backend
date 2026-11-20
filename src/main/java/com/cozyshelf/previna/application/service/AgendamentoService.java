@@ -12,6 +12,7 @@ import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import com.cozyshelf.previna.domain.model.TipoAtendimento;
+import com.cozyshelf.previna.domain.model.TransacaoPontos;
 import com.cozyshelf.previna.domain.repository.AgendamentoRepository;
 import com.cozyshelf.previna.domain.repository.MedicoRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -33,15 +34,17 @@ public class AgendamentoService {
     private final MedicoRepository medicoRepository;
     private final GestanteService gestanteService;
     private final PontuacaoService pontuacaoService;
+    private final Auditoria auditoria;
 
     public AgendamentoService(TipoAtendimentoService tipoService, AgendamentoRepository agendamentoRepository,
                               MedicoRepository medicoRepository, GestanteService gestanteService,
-                              PontuacaoService pontuacaoService) {
+                              PontuacaoService pontuacaoService, Auditoria auditoria) {
         this.tipoService = tipoService;
         this.agendamentoRepository = agendamentoRepository;
         this.medicoRepository = medicoRepository;
         this.gestanteService = gestanteService;
         this.pontuacaoService = pontuacaoService;
+        this.auditoria = auditoria;
     }
 
     // Cada item vira um agendamento independente, com status e confirmação próprios. Tudo na mesma
@@ -49,6 +52,7 @@ public class AgendamentoService {
     // Nenhum ponto é creditado aqui: os pontos do tipo só saem quando o médico confirmar a realização.
     // Repetir um pendente (mesma gestante, tipo e data) é barrado pelo índice da V21, e não por uma consulta antes:
     // duas requisições simultâneas passariam juntas pela consulta. O item repetido na própria lista cai no mesmo índice.
+    // Cada agendamento gravado vai para o log de auditoria, na mesma transação.
     @Transactional
     public List<AgendamentoResponse> agendar(AgendamentoRequest dados, Long idMedico) {
         // A gestante é conferida antes dos tipos: 404 antes de 400, como no diagrama
@@ -59,7 +63,9 @@ public class AgendamentoService {
                 .map(item -> new Agendamento(gestante, tipoService.paraAgendamento(idMedico, item.tipoAtendimento()),
                         medico, item.dataPrevista(), item.observacao()))
                 .toList();
-        return gravar(novos).stream().map(AgendamentoService::resposta).toList();
+        List<Agendamento> gravados = gravar(novos);
+        auditoria.agendamentosCriados(idMedico, gravados);
+        return gravados.stream().map(AgendamentoService::resposta).toList();
     }
 
     // O flush aqui dentro faz a violação sair deste método, e não do commit, onde viraria o 409 genérico.
@@ -135,18 +141,22 @@ public class AgendamentoService {
                 .toList();
     }
 
-    // Status, transação de pontos, saldo e resposta na mesma transação: ou tudo é gravado, ou nada
+    // Status, transação de pontos, saldo, log de auditoria e resposta na mesma transação: ou tudo é gravado, ou nada
     @Transactional
     public ConfirmacaoResponse confirmar(Long idAgendamento, Long idMedico) {
         Agendamento agendamento = resolver(idAgendamento, idMedico, StatusAgendamento.REALIZADO);
-        int pontos = pontuacaoService.creditarPorAgendamento(agendamento);
-        return new ConfirmacaoResponse(resposta(agendamento), pontos, agendamento.getGestante().getSaldoPontos());
+        TransacaoPontos credito = pontuacaoService.creditarPorAgendamento(agendamento);
+        auditoria.agendamentoResolvido(idMedico, agendamento, credito);
+        return new ConfirmacaoResponse(resposta(agendamento), credito.getPontos(),
+                agendamento.getGestante().getSaldoPontos());
     }
 
-    // Faltar não credita nada; o registro serve para o acompanhamento do pré-natal
+    // Faltar não credita nada; o registro serve para o acompanhamento do pré-natal, e vai para o log de auditoria
     @Transactional
     public AgendamentoResponse registrarNaoComparecimento(Long idAgendamento, Long idMedico) {
-        return resposta(resolver(idAgendamento, idMedico, StatusAgendamento.NAO_COMPARECEU));
+        Agendamento agendamento = resolver(idAgendamento, idMedico, StatusAgendamento.NAO_COMPARECEU);
+        auditoria.agendamentoResolvido(idMedico, agendamento, null);
+        return resposta(agendamento);
     }
 
     // Agendamento fora do alcance do médico responde como inexistente, com a mensagem do agendamento:

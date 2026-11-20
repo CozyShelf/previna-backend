@@ -59,10 +59,10 @@ class ListagensTest {
             mock(ImagemProdutoRepository.class));
     private final PromocaoService promocaoService = new PromocaoService(promocaoRepository,
             mock(CupomResgatadoRepository.class), empresaRepository, mock(PontuacaoService.class),
-            mock(GeradorCodigoResgate.class));
+            mock(GeradorCodigoResgate.class), mock(Auditoria.class));
     private final CupomService cupomService = new CupomService(cupomRepository, produtoRepository,
             mock(CupomResgatadoRepository.class), empresaRepository, mock(PontuacaoService.class),
-            mock(GeradorCodigoResgate.class));
+            mock(GeradorCodigoResgate.class), mock(Auditoria.class));
 
     private static final ListagemRequest PADRAO = new ListagemRequest(null, null, null);
 

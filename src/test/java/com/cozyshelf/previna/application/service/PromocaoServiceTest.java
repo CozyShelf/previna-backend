@@ -6,16 +6,19 @@ import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
+import com.cozyshelf.previna.domain.model.AcaoAuditoria;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.LogAuditoria;
 import com.cozyshelf.previna.domain.model.Medico;
 import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
 import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
 import com.cozyshelf.previna.domain.repository.EmpresaParceiraRepository;
+import com.cozyshelf.previna.domain.repository.LogAuditoriaRepository;
 import com.cozyshelf.previna.domain.repository.PromocaoRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -38,8 +41,10 @@ class PromocaoServiceTest {
     private final CupomResgatadoRepository resgatadoRepository = mock(CupomResgatadoRepository.class);
     private final EmpresaParceiraRepository empresaRepository = mock(EmpresaParceiraRepository.class);
     private final PontuacaoService pontuacaoService = mock(PontuacaoService.class);
+    private final LogAuditoriaRepository logRepository = mock(LogAuditoriaRepository.class);
     private final PromocaoService service = new PromocaoService(promocaoRepository, resgatadoRepository,
-            empresaRepository, pontuacaoService, new GeradorCodigoResgate(resgatadoRepository));
+            empresaRepository, pontuacaoService, new GeradorCodigoResgate(resgatadoRepository),
+            new Auditoria(logRepository));
 
     private static PromocaoRequest dados(LocalDate inicio, LocalDate fim) {
         return new PromocaoRequest("Semana do bebê", null, new BigDecimal("15"), inicio, fim, Categoria.FRALDAS);
@@ -242,6 +247,42 @@ class PromocaoServiceTest {
         verify(pontuacaoService, never()).debitarPontos(any(), anyInt(), any());
     }
 
+    // Log de auditoria do resgate novo: a gestante e o resgate, sem transação nem pontos, na hora do resgate
+    @Test
+    void resgateGravaOLogSemPontos() {
+        promocaoDe(HOJE, HOJE.plusDays(5));
+        gestanteTravada(80);
+        when(resgatadoRepository.saveAndFlush(any())).thenAnswer(i -> Campos.definir(i.getArgument(0), "id", 9L));
+
+        service.resgatar(5L, 7L, null);
+
+        var registro = ArgumentCaptor.forClass(LogAuditoria.class);
+        verify(logRepository).save(registro.capture());
+        var salvo = ArgumentCaptor.forClass(CupomResgatado.class);
+        verify(resgatadoRepository).saveAndFlush(salvo.capture());
+        var log = registro.getValue();
+        assertEquals(AcaoAuditoria.PROMOCAO_RESGATADA, log.getAcao());
+        assertEquals(7L, log.getUsuarioId());
+        assertEquals(7L, log.getGestanteId());
+        assertEquals(9L, log.getCupomResgatadoId());
+        assertNull(log.getTransacaoPontosId());
+        assertNull(log.getPontos());
+        assertNull(log.getAgendamentoId());
+        assertEquals(salvo.getValue().getDataResgate(), log.getDataHora());
+    }
+
+    // A falha ao gravar o log sai do serviço: a transação do resgate é desfeita (provado no banco em
+    // LogAuditoriaIntegracaoTest)
+    @Test
+    void falhaAoGravarOLogDoResgateSaiDoServico() {
+        promocaoDe(HOJE, HOJE.plusDays(5));
+        gestanteTravada(0);
+        var falha = new DataIntegrityViolationException("falha simulada no log");
+        when(logRepository.save(any())).thenThrow(falha);
+
+        assertSame(falha, assertThrows(DataIntegrityViolationException.class, () -> service.resgatar(5L, 7L, null)));
+    }
+
     @Test
     void resgateValeNoPrimeiroENoUltimoDia() {
         promocaoDe(HOJE, HOJE);
@@ -271,6 +312,7 @@ class PromocaoServiceTest {
         var erro = assertThrows(NaoEncontradoException.class, () -> service.resgatar(5L, 7L, null));
         assertEquals("Promoção não encontrada", erro.getMessage());
         verify(resgatadoRepository, never()).saveAndFlush(any());
+        verify(logRepository, never()).save(any());
     }
 
     @Test
@@ -302,6 +344,7 @@ class PromocaoServiceTest {
         assertEquals("Promoção indisponível", erro.getMessage());
         assertEquals(CodigoErro.PROMOCAO_INDISPONIVEL, erro.getCodigo());
         verify(resgatadoRepository, never()).saveAndFlush(any());
+        verify(logRepository, never()).save(any());
     }
 
     // Quem decide é o índice único: o serviço não consulta antes, só traduz a violação
@@ -314,6 +357,7 @@ class PromocaoServiceTest {
         var erro = assertThrows(ConflitoException.class, () -> service.resgatar(5L, 7L, UUID.randomUUID()));
         assertEquals("Promoção já resgatada", erro.getMessage());
         assertEquals(CodigoErro.PROMOCAO_JA_RESGATADA, erro.getCodigo());
+        verify(logRepository, never()).save(any());
     }
 
     @Test
@@ -333,5 +377,7 @@ class PromocaoServiceTest {
         assertEquals(TipoResgate.PROMOCAO, resgate.cupom().tipo());
         assertEquals(40, resgate.cupom().saldo());
         verify(resgatadoRepository, never()).saveAndFlush(any());
+        // O toque repetido não é um resgate novo: o log já tem o do primeiro
+        verify(logRepository, never()).save(any());
     }
 }

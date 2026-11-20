@@ -7,6 +7,7 @@ actor "Empresa Parceira" as Empresa
 boundary "Portal da Empresa" as Portal
 control "ValidacaoCupomController" as Controller
 participant "ResgateService" as Service
+participant "Auditoria" as Auditoria
 database "Banco de Dados" as BD
 
 note over Empresa, Controller
@@ -30,6 +31,8 @@ BD --> Service : linhas alteradas
 
 alt 1 linha: validado agora
     Service -> BD : lê o resgate (cópia, categoria do produto, nome da gestante)
+    Service -> Auditoria : resgateValidado(idEmpresa, resgate, agora)
+    Auditoria -> BD : INSERT log_auditoria (acao = RESGATE_VALIDADO, usuario = idEmpresa,\ngestante do resgate, cupom_resgatado, data_hora = :agora, a data_uso)
     Service --> Controller : ValidacaoCupomResponse
     Controller --> Portal : 200 OK
     Portal --> Empresa : Exibe "Validado" com o produto ou título, o desconto e o nome da gestante
@@ -63,6 +66,9 @@ note over Gestante, BD
     recebe 409 RESGATE_JA_UTILIZADO com a dataUso da primeira. :agora e :hoje vêm da aplicação.
     Vale a cópia do resgate (D2): cupom ou promoção desativados ou editados depois não invalidam o código.
     Depois da validação, "meus cupons" (GET /gestantes/cupons/{id}) mostra UTILIZADO com a mesma dataUso.
+    O log de auditoria (RF18) só é gravado no 200, como último passo, na mesma transação: duas validações simultâneas
+    gravam uma linha só. O 409 do vencido comita o EXPIRADO (noRollbackFor), mas não grava log; uma falha ao
+    gravar o log não é conflito e desfaz a validação.
 end note
 
 @enduml

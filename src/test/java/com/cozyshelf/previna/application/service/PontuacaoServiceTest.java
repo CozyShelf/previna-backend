@@ -67,7 +67,8 @@ class PontuacaoServiceTest {
         comFator("1.50");
 
         // 25 × 1,50 = 37,5, que arredonda para 38 (HALF_UP)
-        assertEquals(38, service.creditarPorAgendamento(agendamento));
+        var credito = service.creditarPorAgendamento(agendamento);
+        assertEquals(38, credito.getPontos());
 
         assertEquals(38, gestante.getSaldoPontos());
         // A soma vai para o banco num UPDATE atômico; a entidade não grava o saldo
@@ -78,6 +79,8 @@ class PontuacaoServiceTest {
         assertEquals(38, salva.getValue().getPontos());
         assertEquals(new BigDecimal("1.50"), salva.getValue().getFatorAplicado());
         assertSame(agendamento, salva.getValue().getAgendamento());
+        // A transação devolvida é a gravada (o id do INSERT fica nela), para o log de auditoria
+        assertSame(salva.getValue(), credito);
     }
 
     // Gestante pré-cadastrada ainda não tem dados socioeconômicos: o fator é neutro, não um erro
@@ -85,7 +88,7 @@ class PontuacaoServiceTest {
     void usaFatorNeutroQuandoNaoHaDadosSocioeconomicos() {
         when(dadosRepository.findById(1L)).thenReturn(Optional.empty());
 
-        assertEquals(25, service.creditarPorAgendamento(agendamento));
+        assertEquals(25, service.creditarPorAgendamento(agendamento).getPontos());
 
         assertEquals(25, gestante.getSaldoPontos());
         var salva = ArgumentCaptor.forClass(TransacaoPontos.class);
@@ -108,7 +111,7 @@ class PontuacaoServiceTest {
         comFator("1.01");
 
         // 25 × 1,01 = 25,25 -> 25
-        assertEquals(25, service.creditarPorAgendamento(agendamento));
+        assertEquals(25, service.creditarPorAgendamento(agendamento).getPontos());
         verify(transacaoRepository).save(any());
     }
 
@@ -143,10 +146,12 @@ class PontuacaoServiceTest {
         var resgatado = new CupomResgatado(new Cupom(1L, fralda, BigDecimal.TEN, LocalDate.now(), 200), empresa,
                 gestante, "ABCD2345", null);
 
-        assertEquals(300, service.debitarPontos(gestante, 200, resgatado));
+        var debito = service.debitarPontos(gestante, 200, resgatado);
 
         var salva = ArgumentCaptor.forClass(TransacaoPontos.class);
         verify(transacaoRepository).save(salva.capture());
+        // A transação devolvida é a gravada, para o log de auditoria
+        assertSame(salva.getValue(), debito);
         assertEquals(TipoTransacao.DEBITO, salva.getValue().getTipo());
         assertEquals(200, salva.getValue().getPontos());
         assertSame(resgatado, salva.getValue().getCupomResgatado());

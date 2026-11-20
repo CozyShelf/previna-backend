@@ -52,10 +52,11 @@ public class PontuacaoService {
         this.entityManager = entityManager;
     }
 
-    // Crédito pela realização de um exame ou consulta.
+    // Crédito pela realização de um exame ou consulta. Devolve a transação gravada (com o id e os pontos), que vai
+    // para o log de auditoria.
     // Sem @Transactional próprio: roda dentro da transação de quem chama, para status, transação, saldo e extrato
     // serem gravados juntos ou não serem gravados.
-    public int creditarPorAgendamento(Agendamento agendamento) {
+    public TransacaoPontos creditarPorAgendamento(Agendamento agendamento) {
         Gestante gestante = agendamento.getGestante();
         // Trava e relê a linha: créditos simultâneos de agendamentos diferentes leriam o mesmo saldo e um se perderia.
         // Uma consulta com @Lock não bastaria: a gestante já está carregada, e o Hibernate manteria o saldo antigo.
@@ -70,12 +71,14 @@ public class PontuacaoService {
                 .intValue();
 
         // fator_aplicado guarda o fator usado, para o extrato continuar explicável se a regra mudar
-        transacaoRepository.save(new TransacaoPontos(gestante, agendamento, TipoTransacao.CREDITO, pontos, fator));
+        // O id é gerado no INSERT do save (IDENTITY) e fica nesta mesma instância
+        TransacaoPontos credito = new TransacaoPontos(gestante, agendamento, TipoTransacao.CREDITO, pontos, fator);
+        transacaoRepository.save(credito);
         // A soma é feita no banco (a entidade não grava o saldo); com a linha travada, o saldo em memória lido no
         // refresh mais os pontos é o mesmo que ficou gravado
         gestanteRepository.creditarPontos(gestante.getId(), pontos);
         gestante.creditarPontos(pontos);
-        return pontos;
+        return credito;
     }
 
     // Trava a gestante (SELECT ... FOR UPDATE) até o fim da transação de quem chama, o resgate de cupom: o saldo lido
@@ -88,15 +91,17 @@ public class PontuacaoService {
 
     // Débito pelo resgate de um cupom, com a gestante já travada e o saldo já conferido por quem chama.
     // Sem @Transactional próprio, como o crédito: cupom resgatado, transação e saldo são gravados juntos.
-    public int debitarPontos(Gestante gestante, int pontos, CupomResgatado cupomResgatado) {
-        transacaoRepository.save(new TransacaoPontos(gestante, cupomResgatado, pontos));
+    // Devolve a transação gravada, para o log de auditoria; o saldo novo fica na gestante
+    public TransacaoPontos debitarPontos(Gestante gestante, int pontos, CupomResgatado cupomResgatado) {
+        TransacaoPontos debito = new TransacaoPontos(gestante, cupomResgatado, pontos);
+        transacaoRepository.save(debito);
         // O WHERE confere o saldo de novo no banco: com a trava não deveria faltar, mas um débito nunca passa do saldo.
         // A exceção desfaz a transação inteira, cupom resgatado incluído.
         if (gestanteRepository.debitarPontos(gestante.getId(), pontos) == 0) {
             throw new ConflitoException("Pontos insuficientes", CodigoErro.PONTOS_INSUFICIENTES);
         }
         gestante.debitarPontos(pontos);
-        return gestante.getSaldoPontos();
+        return debito;
     }
 
     // O saldo é o da gestante, atualizado a cada crédito e débito, e não a soma das transações

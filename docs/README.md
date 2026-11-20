@@ -9,7 +9,7 @@ Cada diagrama tem a sua pasta, com o fonte (`.puml`, PlantUML) e a imagem (`.png
 
 Para gerar a imagem de novo depois de editar o fonte: `java -jar plantuml.jar -tpng <pasta>/<nome>.puml` (PlantUML 1.2024.7). O modelo lógico e os casos de uso usam o layout `smetana`, que não precisa do Graphviz.
 
-No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); as demais seguem as migrações V1 a V23.
+O modelo lógico segue as migrações V1 a V24.
 
 ## Decisões
 
@@ -109,9 +109,44 @@ No modelo lógico, as tabelas em cinza ainda não têm migração (auditoria); a
   cadastros sobrepostos simultâneos entram os dois no índice, cada um espera o outro na conferência da exclusão e o
   PostgreSQL derruba um com `deadlock detected`, que viraria `500`. A regra continua sendo a exclusão; a fila só faz o
   perdedor receber a violação dela.
-- **Auditoria pendente:** os diagramas de cadastro e de confirmação marcam `log_auditoria` como previsto: ainda não
-  tem migração nem é gravada. Por ora o rastro de quem resolveu está em `agendamento.confirmado_por` e
-  `agendamento.data_confirmacao`.
+- **Log de auditoria (RF18):** a tabela `log_auditoria` (`V24`) registra quem fez o quê nas confirmações de atendimento
+  e nas movimentações de pontos. Cada linha tem `data_hora`, `acao`, `usuario_id` (quem fez), `gestante_id` (sempre
+  preenchida: a do agendamento ou do resgate) e, conforme a ação, `agendamento_id`, `transacao_pontos_id` (o crédito
+  ou o débito) e `cupom_resgatado_id`; `pontos` é uma cópia dos pontos da transação, para ler o log sem juntar
+  tabelas. Ações:
+
+  | `acao` | Quando | `usuario_id` | Ligada a |
+  |---|---|---|---|
+  | `AGENDAMENTO_CRIADO` | `POST /agendamentos`, uma linha por item do cadastro | médico | agendamento |
+  | `AGENDAMENTO_REALIZADO` | `PUT /agendamentos/{id}/confirmar` | médico | agendamento, crédito e `pontos` |
+  | `AGENDAMENTO_NAO_COMPARECEU` | `PUT /agendamentos/{id}/nao-compareceu` | médico | agendamento |
+  | `CUPOM_RESGATADO` | `POST /cupons/{id}/resgatar`, só o resgate novo (`201`) | gestante | cupom resgatado, débito e `pontos` |
+  | `PROMOCAO_RESGATADA` | `POST /promocoes/{id}/resgatar`, só o resgate novo (`201`) | gestante | cupom resgatado (`pontos` nulo) |
+  | `RESGATE_VALIDADO` | `POST /empresas/cupons/validar`, só no `200` | empresa | cupom resgatado |
+
+  Garantias:
+  - **Mesma transação da operação:** os serviços chamam a `Auditoria` explicitamente, depois de gravar a operação (sem
+    AOP nem listeners). A `Auditoria` é `@Transactional(propagation = MANDATORY)`: sem a transação de quem chama, a
+    chamada falha em vez de gravar sozinha. Se a gravação do log falhar, a operação inteira é desfeita (sem desfecho,
+    crédito, débito, resgate ou validação), e um log nunca fica gravado sem a operação.
+  - **Só os caminhos que dão certo gravam:** os `400`, `404` e `409` não geram linha, nem a repetição do resgate com a
+    mesma `Idempotency-Key` (`200`), que devolve o resgate já registrado. Na validação, o log é o último passo do
+    caminho do `200`: o `409` `RESGATE_EXPIRADO` comita o `EXPIRADO` (`noRollbackFor`), mas não é uma validação e não
+    grava log; uma falha ao gravar o log não é `ConflitoException`, então o `noRollbackFor` não a cobre e a validação
+    é desfeita.
+  - **Uma linha por operação, também com concorrência:** o log vai depois da trava ou do `UPDATE` condicionado que
+    decide a operação. Duas confirmações simultâneas do mesmo agendamento gravam um crédito e uma linha
+    `AGENDAMENTO_REALIZADO` (a segunda espera a trava do agendamento e recebe `409`); duas validações simultâneas do
+    mesmo código gravam uma linha `RESGATE_VALIDADO`.
+  - **Hora da operação:** `data_hora` é a mesma hora da aplicação gravada na operação (`data_confirmacao` no desfecho,
+    `data_resgate` no resgate, `data_uso` na validação, a hora do cadastro no agendamento criado), e não o `now()` do
+    banco.
+  - **Só inserção:** o gatilho `log_auditoria_somente_insercao` barra `UPDATE` e `DELETE` no banco; a entidade
+    `LogAuditoria` é `@Immutable`, e o `LogAuditoriaRepository` só expõe `save` e `saveAll`. Os testes de integração
+    não limpam o banco (os dados são únicos por teste), então o gatilho não atrapalha.
+
+  O log começa vazio (sem preencher o histórico de antes da `V24`), e ainda não há rota nem tela para lê-lo; o rastro
+  de quem resolveu cada agendamento continua também em `agendamento.confirmado_por` e `agendamento.data_confirmacao`.
 - **Regra de negócio violada:** `409 Conflict` (`ConflitoException`); dados inválidos, `400 Bad Request`. A API não usa 422.
 - **Código estável nos erros:** os `409` (e os `404`) que os fronts tratam de forma própria levam, ao lado de
   `message`, o campo `codigo` com o nome de uma constante de `CodigoErro`, por exemplo

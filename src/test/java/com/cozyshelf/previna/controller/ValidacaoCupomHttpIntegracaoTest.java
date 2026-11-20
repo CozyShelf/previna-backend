@@ -62,7 +62,8 @@ import static org.mockito.Mockito.reset;
 
 // Validação do código na loja (POST /empresas/cupons/validar) de ponta a ponta: servidor numa porta aleatória, filtro
 // JWT, controller, serviço e PostgreSQL. Cada resposta do contrato com o portal, o status gravado no banco, o que o app
-// da gestante passa a ver e duas validações simultâneas do mesmo código com a disputa forçada.
+// da gestante passa a ver e duas validações simultâneas do mesmo código com a disputa forçada (com uma linha só no log
+// de auditoria).
 // Roda só com PREVINA_TEST_DB_URL (ver ResgateCupomIntegracaoTest e o README).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @EnabledIfEnvironmentVariable(named = "PREVINA_TEST_DB_URL", matches = ".+")
@@ -522,6 +523,9 @@ class ValidacaoCupomHttpIntegracaoTest {
             assertEquals(validado.get("dataUso").asText(), conflito.get("dataUso").asText());
             assertEquals("UTILIZADO", status(resgate));
             assertEquals(1, comDataUso(resgate));
+            // Log de auditoria (RF18): uma linha RESGATE_VALIDADO só, a da validação que passou
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM log_auditoria WHERE cupom_resgatado_id = ?"
+                    + " AND acao = 'RESGATE_VALIDADO'", Integer.class, resgate.getId()));
         }
     }
 }

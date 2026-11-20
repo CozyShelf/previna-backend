@@ -3,15 +3,9 @@
 title PREVINA - Modelo lógico do banco de dados
 hide circle
 hide stereotype
-skinparam class {
-  BackgroundColor<<previsto>> #EEEEEE
-  BorderColor<<previsto>> #888888
-  FontColor<<previsto>> #555555
-}
 
 legend top right
-  Fundo branco: tabela criada nas migrações (V1 a V23).
-  Fundo cinza: tabela prevista, ainda sem migração.
+  Tabelas criadas nas migrações (V1 a V24).
   • campo obrigatório (NOT NULL)
 endlegend
 
@@ -212,15 +206,19 @@ entity imagem_conteudo {
   * tipo : varchar
 }
 
-entity log_auditoria <<previsto>> {
+entity log_auditoria {
   * id : bigint <<PK>>
   --
-  * usuario_id : bigint <<FK>>
-  agendamento_id : bigint <<FK>>
-  transacao_id : bigint <<FK>>
-  * evento : varchar
-  detalhes : text
   * data_hora : timestamp
+  * acao : AGENDAMENTO_CRIADO | AGENDAMENTO_REALIZADO
+    | AGENDAMENTO_NAO_COMPARECEU | CUPOM_RESGATADO
+    | PROMOCAO_RESGATADA | RESGATE_VALIDADO
+  * usuario_id : bigint <<FK>> (quem fez)
+  * gestante_id : bigint <<FK>>
+  agendamento_id : bigint <<FK>>
+  transacao_pontos_id : bigint <<FK>>
+  cupom_resgatado_id : bigint <<FK>>
+  pontos : int (cópia)
 }
 
 usuario ||--o| medico
@@ -228,7 +226,7 @@ usuario ||--o| gestante
 usuario ||--o| empresa_parceira
 usuario ||--o{ conteudo_informativo
 conteudo_informativo ||--o| imagem_conteudo
-usuario ||--o{ log_auditoria
+usuario ||--o{ log_auditoria : usuario_id
 
 medico ||--o{ gestante
 gestante ||--o| foto_gestante
@@ -256,8 +254,10 @@ medico |o--o{ tipo_atendimento : criado_por
 gestante ||--o{ transacao_pontos
 agendamento |o--o| transacao_pontos
 cupom_resgatado |o--o| transacao_pontos : cupom_resgatado_id
+gestante ||--o{ log_auditoria
 agendamento |o--o{ log_auditoria
 transacao_pontos |o--o{ log_auditoria
+cupom_resgatado |o--o{ log_auditoria
 
 note bottom of tipo_atendimento
   Sem criado_por: tipo padrão, disponível para todos os médicos.
@@ -287,6 +287,12 @@ note bottom of cupom_resgatado
   cupom_resgatado_promocao_uma_vez (gestante_id, promocao_id);
   no cupom promocao_id é nulo e não colide (N resgates).
   UNIQUE (gestante_id, chave_idempotencia) (V20).
+end note
+
+note bottom of log_auditoria
+  Log de auditoria (RF18, V24): uma linha por operação, gravada
+  na mesma transação dela. Só INSERT: o gatilho
+  log_auditoria_somente_insercao barra UPDATE e DELETE.
 end note
 
 @enduml
