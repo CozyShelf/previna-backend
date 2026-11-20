@@ -50,10 +50,11 @@ data_confirmacao = agora;
 :UPDATE gestante SET saldo_pontos =
 saldo_pontos + pontos;
 
-|AgendamentoService|
-:insere log_auditoria (previsto)
-(médico, agendamento, transação,
-evento = AGENDAMENTO_CONFIRMADO);
+|Auditoria|
+:insere log_auditoria
+(acao = AGENDAMENTO_REALIZADO, médico,
+gestante, agendamento, crédito, pontos,
+data_hora = data_confirmacao);
 
 |AgendamentoController|
 :200 OK
@@ -62,8 +63,11 @@ stop
 
 note right
   Status, transação de pontos, saldo e log
-  na mesma transação (@Transactional):
-  ou tudo é gravado, ou nada.
+  de auditoria na mesma transação
+  (@Transactional; a Auditoria exige a
+  transação de quem chama, MANDATORY):
+  ou tudo é gravado, ou nada. Os 404 e
+  409 não gravam log.
   A trava da gestante é a mesma do resgate:
   créditos e débitos simultâneos não
   perdem pontos do saldo.

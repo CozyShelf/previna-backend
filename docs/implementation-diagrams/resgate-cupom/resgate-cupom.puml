@@ -67,12 +67,20 @@ saldo_pontos - pontos_necessarios
 WHERE saldo_pontos >= pontos_necessarios
 (nenhuma linha: 409 "Pontos insuficientes");
 
+|Auditoria|
+:insere log_auditoria
+(acao = CUPOM_RESGATADO, gestante,
+cupom resgatado, débito, pontos,
+data_hora = data_resgate);
+
 |CupomController|
 :201 Created (código e novo saldo);
 stop
 
 note right
-  Tudo na mesma transação, com a gestante
+  Tudo na mesma transação, log de auditoria
+  incluído (o toque repetido não grava
+  outro), com a gestante
   bloqueada (SELECT ... FOR UPDATE):
   dois resgates simultâneos não passam do saldo.
   O duplo toque no app manda a mesma

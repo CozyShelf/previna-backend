@@ -8,6 +8,7 @@ control "GestanteController" as GestanteController
 control "AgendamentoController" as Controller
 participant "AgendamentoService" as Service
 participant "PontuacaoService" as Pontuacao
+participant "Auditoria" as Auditoria
 database "Banco de Dados" as BD
 
 note over Medico, Controller
@@ -55,8 +56,9 @@ alt médico confirma a presença da gestante
         Pontuacao -> BD : registrarTransacao(tipo = CREDITO, pontos,\nfator_aplicado = fator_ponderacao, idAgendamento)
         Pontuacao -> BD : atualizarSaldo(idGestante, +pontos)
         BD --> Pontuacao : saldo atualizado
-        Pontuacao --> Service : pontos creditados
-        Service -> BD : registrarLog(idMedico, agendamento, transação,\nevento = AGENDAMENTO_CONFIRMADO)\n(previsto: log_auditoria ainda não tem migração)
+        Pontuacao --> Service : transação de crédito (id e pontos)
+        Service -> Auditoria : agendamentoResolvido(idMedico, agendamento, crédito)
+        Auditoria -> BD : INSERT log_auditoria (acao = AGENDAMENTO_REALIZADO, usuario = idMedico,\ngestante, agendamento, transacao_pontos = crédito, pontos,\ndata_hora = dataConfirmacao)
         Service --> Controller : agendamento, pontos creditados e saldo
         Controller --> Tela : 200 OK
         Tela --> Medico : Exibe "Presença confirmada e <n> pontos creditados"
@@ -71,15 +73,19 @@ else gestante não compareceu
         Mesmos 404 e 409 da confirmação.
     end note
     Service -> BD : atualizarStatus(idAgendamento, NAO_COMPARECEU,\nconfirmadoPor = idMedico, dataConfirmacao = agora)
+    Service -> Auditoria : agendamentoResolvido(idMedico, agendamento, sem crédito)
+    Auditoria -> BD : INSERT log_auditoria (acao = AGENDAMENTO_NAO_COMPARECEU, usuario = idMedico,\ngestante, agendamento, sem transação nem pontos, data_hora = dataConfirmacao)
     Service --> Controller : agendamento
     Controller --> Tela : 200 OK
     Tela --> Medico : Exibe "Não comparecimento registrado", sem crédito de pontos
 end
 
 note over Medico, BD
-    Status, transação de pontos, saldo e log na mesma transação: ou tudo é gravado, ou nada.
+    Status, transação de pontos, saldo e log de auditoria (RF18) na mesma transação: ou tudo é gravado, ou nada;
+    se a gravação do log falhar, o desfecho e o crédito são desfeitos. Os 404 e 409 não gravam log.
     As travas serializam as confirmações: a do agendamento impede dois desfechos para o mesmo agendamento,
     e a da gestante impede que créditos simultâneos de agendamentos diferentes percam pontos do saldo.
+    Duas confirmações simultâneas do mesmo agendamento: um crédito e uma linha AGENDAMENTO_REALIZADO.
     O fator de ponderação hoje é neutro (1,00) até a regra ser definida; gestante sem dados socioeconômicos usa 1,00.
     fator_aplicado guarda o fator usado, para o extrato continuar explicável se a regra mudar.
 end note

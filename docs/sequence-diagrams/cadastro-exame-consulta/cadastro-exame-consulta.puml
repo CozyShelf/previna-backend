@@ -8,6 +8,7 @@ control "TipoAtendimentoController" as TipoController
 control "AgendamentoController" as Controller
 participant "AgendamentoService" as Service
 participant "TipoAtendimentoService" as Tipos
+participant "Auditoria" as Auditoria
 database "Banco de Dados" as BD
 
 Medico -> Tela : Abre a gestante e acessa\n"Cadastrar exame ou consulta"
@@ -56,7 +57,8 @@ else dados válidos
                 Controller --> Tela : 409 Conflict
                 Tela --> Medico : Exibe mensagem "Essa gestante já tem esse\nexame ou consulta pendente nessa data"
             else nenhum pendente igual
-                Service -> BD : registrarLog(idMedico, agendamentos, evento = AGENDAMENTO_CRIADO)\n(previsto: log_auditoria ainda não tem migração)
+                Service -> Auditoria : agendamentosCriados(idMedico, agendamentos)
+                Auditoria -> BD : INSERT log_auditoria, uma linha por agendamento\n(acao = AGENDAMENTO_CRIADO, usuario = idMedico, gestante, agendamento)
                 Service --> Controller : agendamentos
                 Controller --> Tela : 201 Created
                 Tela --> Medico : Exibe os exames e consultas cadastrados na página da gestante
@@ -64,8 +66,9 @@ else dados válidos
             note over Medico, Service
                 Nenhum ponto é creditado aqui: os pontos do tipo de atendimento
                 só são gerados quando o médico confirmar a realização.
-                Tudo na mesma transação: um tipo inválido ou um pendente repetido
-                não deixa metade do cadastro gravada. O mesmo exame em outra data,
+                Tudo na mesma transação, log de auditoria incluído: um tipo inválido,
+                um pendente repetido ou uma falha ao gravar o log não deixam metade
+                do cadastro gravada, e os erros não gravam log. O mesmo exame em outra data,
                 ou na mesma data depois do desfecho do anterior, é permitido.
             end note
         end

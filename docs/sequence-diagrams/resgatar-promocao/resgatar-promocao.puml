@@ -7,6 +7,7 @@ boundary "App Previna" as App
 control "ResgatePromocaoController" as Controller
 participant "PromocaoService" as Service
 participant "PontuacaoService" as Pontuacao
+participant "Auditoria" as Auditoria
 database "Banco de Dados" as BD
 
 note over Gestante, Controller
@@ -58,6 +59,8 @@ else chave ausente ou válida
                 App --> Gestante : Exibe "Promoção já resgatada"
             else primeiro resgate
                 BD --> Service : resgate salvo
+                Service -> Auditoria : promocaoResgatada(resgate)
+                Auditoria -> BD : INSERT log_auditoria (acao = PROMOCAO_RESGATADA, usuario = gestante = idGestante,\ncupom_resgatado, sem transação nem pontos, data_hora = data do resgate)
                 Service --> Controller : resgate (tipo PROMOCAO, pontosGastos 0, saldo atual)
                 Controller --> App : 201 Created
                 App --> Gestante : Exibe o código, válido até o fim da promoção
@@ -68,6 +71,7 @@ end
 
 note over Gestante, BD
     A promoção não custa pontos: não há débito nem transacao_pontos, e o saldo da resposta é o atual.
+    O resgate novo grava o log de auditoria (RF18) na mesma transação; os erros e o toque repetido (200) não gravam.
     Cada gestante resgata cada promoção uma vez; quem decide é o índice único (gestante_id, promocao_id), e não uma
     consulta antes: dois resgates simultâneos com chaves diferentes gravam um só, e o outro recebe 409.
     O duplo toque manda a mesma Idempotency-Key: o segundo espera na trava da gestante e recebe o resgate do primeiro.
