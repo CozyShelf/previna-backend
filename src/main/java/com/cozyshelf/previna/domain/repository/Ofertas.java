@@ -48,6 +48,14 @@ public final class Ofertas {
         };
     }
 
+    // Produtos da empresa que não aparecem no catálogo no dia: o contrário de produtos(), sem os filtros da gestante.
+    // Painel da empresa
+    public static Specification<Produto> semOferta(Long idEmpresa, LocalDate dia) {
+        Filtro semFiltros = new Filtro(null, null, null, null, null, dia);
+        return (produto, consulta, cb) -> cb.and(cb.equal(produto.get("empresaId"), idEmpresa),
+                cb.not(comOferta(produto, consulta, cb, semFiltros)));
+    }
+
     private static Predicate comOferta(Root<Produto> produto, AbstractQuery<?> consulta, CriteriaBuilder cb,
                                        Filtro filtro) {
         List<Predicate> condicoes = new ArrayList<>();

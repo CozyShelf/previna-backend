@@ -3,6 +3,8 @@ package com.cozyshelf.previna.domain.repository;
 import com.cozyshelf.previna.domain.model.Agendamento;
 import com.cozyshelf.previna.domain.model.StatusAgendamento;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -47,4 +49,27 @@ public interface AgendamentoRepository extends JpaRepository<Agendamento, Long> 
     @EntityGraph(attributePaths = {"tipo", "gestante"})
     List<Agendamento> findByStatusAndDataPrevistaAndGestanteMedicoIdOrderByIdAsc(
             StatusAgendamento status, LocalDate dia, Long idMedico);
+
+    // ---- Painel do médico (tela Início do portal) ----
+
+    String AGENDADO = "com.cozyshelf.previna.domain.model.StatusAgendamento.AGENDADO";
+    // Pendentes no alcance do médico: :medico nulo é o médico que vê todas as gestantes (a mesma regra da agenda do dia)
+    String PENDENTES_NO_ALCANCE = " from Agendamento a where a.status = " + AGENDADO
+            + " and (:medico is null or a.gestante.medico.id = :medico)";
+    // Do mais antigo para o mais novo; sem horário na tabela, o id (ordem de cadastro) desempata
+    String POR_DATA_PREVISTA = " order by a.dataPrevista, a.id";
+
+    // Pendentes com a data prevista antes do dia (os atrasados, com o dia de hoje). A página traz os primeiros e o total
+    @EntityGraph(attributePaths = {"tipo", "gestante"})
+    @Query(value = "select a" + PENDENTES_NO_ALCANCE + " and a.dataPrevista < :dia" + POR_DATA_PREVISTA,
+            countQuery = "select count(a)" + PENDENTES_NO_ALCANCE + " and a.dataPrevista < :dia")
+    Page<Agendamento> pendentesAntesDe(@Param("medico") Long idMedico, @Param("dia") LocalDate dia, Pageable pagina);
+
+    // Pendentes com a data prevista entre os dois dias, inclusive
+    @EntityGraph(attributePaths = {"tipo", "gestante"})
+    @Query(value = "select a" + PENDENTES_NO_ALCANCE + " and a.dataPrevista between :inicio and :fim"
+            + POR_DATA_PREVISTA,
+            countQuery = "select count(a)" + PENDENTES_NO_ALCANCE + " and a.dataPrevista between :inicio and :fim")
+    Page<Agendamento> pendentesEntre(@Param("medico") Long idMedico, @Param("inicio") LocalDate inicio,
+                                     @Param("fim") LocalDate fim, Pageable pagina);
 }

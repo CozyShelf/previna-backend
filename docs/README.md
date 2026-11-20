@@ -142,11 +142,65 @@ O modelo lógico segue as migrações V1 a V24.
     `data_resgate` no resgate, `data_uso` na validação, a hora do cadastro no agendamento criado), e não o `now()` do
     banco.
   - **Só inserção:** o gatilho `log_auditoria_somente_insercao` barra `UPDATE` e `DELETE` no banco; a entidade
-    `LogAuditoria` é `@Immutable`, e o `LogAuditoriaRepository` só expõe `save` e `saveAll`. Os testes de integração
+    `LogAuditoria` é `@Immutable`, e o `LogAuditoriaRepository` só expõe `save`, `saveAll` e a leitura do painel do
+    admin (`recentes`). Os testes de integração
     não limpam o banco (os dados são únicos por teste), então o gatilho não atrapalha.
 
-  O log começa vazio (sem preencher o histórico de antes da `V24`), e ainda não há rota nem tela para lê-lo; o rastro
-  de quem resolveu cada agendamento continua também em `agendamento.confirmado_por` e `agendamento.data_confirmacao`.
+  O log começa vazio (sem preencher o histórico de antes da `V24`); a única leitura é a `atividadeRecente` do painel do
+  admin (abaixo). O rastro de quem resolveu cada agendamento continua também em `agendamento.confirmado_por` e
+  `agendamento.data_confirmacao`.
+- **Painel da tela Início do portal:** três rotas `GET`, uma por perfil, cada uma com o `@PreAuthorize` só do seu
+  (os outros perfis e o primeiro acesso recebem `403`; sem token, `401`), com o usuário vindo do token. São só leitura
+  (`@Transactional(readOnly = true)`) e não gravam log. Cada número é um `count` no banco e cada lista curta é a página 0
+  de tamanho 5 de uma consulta ordenada: `{ "total": <contagem completa>, "itens": [<no máximo 5>] }`, para a tela
+  mostrar "e mais N". "Hoje" e "agora" são `LocalDate.now()` e `LocalDateTime.now()` da aplicação (fuso de Brasília).
+  Datas saem `"aaaa-mm-dd"`; instantes, em ISO UTC, como os outros DTOs (`ResgateResponse.instante`). Diagrama em
+  `sequence-diagrams/painel-inicio`.
+
+  `GET /painel/medico` (`MEDICO`), no alcance do médico, o mesmo da agenda do dia e da listagem de gestantes: as
+  gestantes que ele acompanha ou, com `verTodasGestantes`, todas.
+
+  | Campo | O que conta | Ordem dos itens |
+  |---|---|---|
+  | `gestantesAcompanhadas` | gestantes no alcance | — |
+  | `atrasados` | agendamentos `AGENDADO` com `dataPrevista` antes de hoje | mais antigo primeiro (o id desempata) |
+  | `proximos7Dias` | `AGENDADO` de amanhã até hoje + 7, inclusive (hoje está na agenda do dia) | mais próximo primeiro |
+  | `semAgendamentoPendente` | gestantes no alcance sem nenhum `AGENDADO` | nome (o id desempata) |
+
+  Não existe gestante inativa no modelo (não há exclusão nem desativação), então "gestantes ativas no alcance" são
+  todas as do alcance, com ou sem o primeiro acesso feito.
+
+  `GET /painel/empresa` (`EMPRESA_PARCEIRA`), tudo só da empresa do token:
+
+  | Campo | O que conta | Ordem dos itens |
+  |---|---|---|
+  | `cuponsAtivos` | cupons ativos com `dataValidade >= hoje` (o cupom válido do `/ofertas`) | — |
+  | `promocoesVigentes` | promoções ativas com hoje entre `dataInicio` e `dataFim`, os dois inclusive | — |
+  | `resgatesAguardandoUso` | resgates (cupom e promoção) `ATIVO` com a validade copiada `>= hoje`; o vencido que ainda está `ATIVO` no banco (a expiração é na leitura) não conta | — |
+  | `validacoes30Dias` | resgates `UTILIZADO` com `dataUso` nos últimos 30 dias, contados do instante atual | — |
+  | `cuponsVencendo7Dias` | cupons válidos com `dataValidade` de hoje até hoje + 7 | vence primeiro (o id desempata) |
+  | `produtosSemOferta` | produtos sem cupom válido e sem promoção vigente da categoria deles: o contrário do critério do `/ofertas` (`Ofertas.semOferta`) | nome (o id desempata) |
+  | `ultimasValidacoes` | lista simples, até 5 resgates `UTILIZADO`, da cópia do resgate (`titulo` só na promoção, `produtoNome` só no cupom; o outro vai `null`), sem dado da gestante | `dataUso` mais recente primeiro |
+
+  Os critérios são os mesmos constantes das consultas do catálogo e da validação (`CupomRepository.VALIDO`,
+  `PromocaoRepository.VIGENTE`, `CupomResgatadoRepository.AGUARDANDO_USO`), para não divergirem.
+
+  `GET /painel/admin` (`ADMIN`):
+
+  | Campo | O que conta |
+  |---|---|
+  | `medicos` | médicos cadastrados |
+  | `empresas` / `gestantes` | `total` cadastradas e `primeiroAcessoPendente` (conta ainda com `PRIMEIRO_ACESSO_PENDENTE`) |
+  | `conteudos` | conteúdos educativos `publicados` e `rascunhos` |
+  | `empresasPendentes` | empresas com `PRIMEIRO_ACESSO_PENDENTE`, da pré-cadastrada há mais tempo (`preCadastradaEm` = `usuario.criado_em`) |
+  | `atividadeRecente` | lista simples: as 10 últimas linhas do `log_auditoria`, da mais recente, com `dataHora`, `acao`, `usuarioNome`, `perfil` e `pontos` |
+
+  A `atividadeRecente` segue a ordem de inserção (o id, pela chave primária), e não `data_hora`, que não tem índice
+  próprio; as duas coincidem, porque `data_hora` é a hora da operação gravada na mesma transação. Nenhum dado da
+  gestante sai para o admin (ele não tem acesso a gestantes, e o atendimento é dado de saúde): nem `gestante_id`, nem o
+  nome dela quando quem fez foi ela (`CUPOM_RESGATADO` e `PROMOCAO_RESGATADA` vêm com `perfil` `GESTANTE` e
+  `usuarioNome` `null`, decidido na própria consulta). `pontos` é a cópia do log, sempre positiva (crédito no
+  `AGENDAMENTO_REALIZADO`, débito no `CUPOM_RESGATADO`); a tela põe o sinal pela ação. Nas outras ações, `null`.
 - **Regra de negócio violada:** `409 Conflict` (`ConflitoException`); dados inválidos, `400 Bad Request`. A API não usa 422.
 - **Código estável nos erros:** os `409` (e os `404`) que os fronts tratam de forma própria levam, ao lado de
   `message`, o campo `codigo` com o nome de uma constante de `CodigoErro`, por exemplo

@@ -8,6 +8,9 @@ import com.cozyshelf.previna.application.service.EmpresaService;
 import com.cozyshelf.previna.application.service.GestanteService;
 import com.cozyshelf.previna.application.service.MedicoService;
 import com.cozyshelf.previna.application.service.OfertaService;
+import com.cozyshelf.previna.application.service.PainelAdminService;
+import com.cozyshelf.previna.application.service.PainelEmpresaService;
+import com.cozyshelf.previna.application.service.PainelMedicoService;
 import com.cozyshelf.previna.application.service.PontuacaoService;
 import com.cozyshelf.previna.application.service.ProdutoService;
 import com.cozyshelf.previna.application.service.PromocaoService;
@@ -118,6 +121,7 @@ class MatrizAutorizacaoTest {
             Rota.putMultipart("/conteudos/{id}", CONTEUDO_VALIDO, EnumSet.of(ADMIN)),
             Rota.put("/conteudos/{id}/publicado", json("{\"publicado\":true}"), EnumSet.of(ADMIN)),
             Rota.delete("/conteudos/{id}", EnumSet.of(ADMIN)),
+            Rota.get("/painel/admin", EnumSet.of(ADMIN)),
 
             // Administrador e gestante: o admin vê também os rascunhos, a gestante só os publicados
             Rota.get("/conteudos", EnumSet.of(ADMIN, GESTANTE)),
@@ -143,6 +147,7 @@ class MatrizAutorizacaoTest {
             Rota.get("/tipos-atendimento/{id}", EnumSet.of(MEDICO)),
             Rota.put("/tipos-atendimento/{id}", json(TIPO_VALIDO), EnumSet.of(MEDICO)),
             Rota.delete("/tipos-atendimento/{id}", EnumSet.of(MEDICO)),
+            Rota.get("/painel/medico", EnumSet.of(MEDICO)),
 
             // Gestante
             Rota.get("/gestantes/agendamentos", EnumSet.of(GESTANTE)),
@@ -188,6 +193,7 @@ class MatrizAutorizacaoTest {
                     .formatted(LocalDate.now().plusDays(30))), EnumSet.of(EMPRESA_PARCEIRA)),
             Rota.put("/empresas/cupons/{id}/ativo", json("{\"ativo\":false}"), EnumSet.of(EMPRESA_PARCEIRA)),
             Rota.post("/empresas/cupons/validar", json("{\"codigo\":\"AB12CD34\"}"), EnumSet.of(EMPRESA_PARCEIRA)),
+            Rota.get("/painel/empresa", EnumSet.of(EMPRESA_PARCEIRA)),
 
             // Primeiro acesso: só com o token temporário do mesmo tipo de conta (a gestante não conclui o da empresa)
             Rota.putMultipart("/gestantes/primeiro-acesso", Map.of("novoLogin", "maria.silva",
@@ -224,6 +230,12 @@ class MatrizAutorizacaoTest {
     @MockitoBean
     private OfertaService ofertaService;
     @MockitoBean
+    private PainelAdminService painelAdminService;
+    @MockitoBean
+    private PainelEmpresaService painelEmpresaService;
+    @MockitoBean
+    private PainelMedicoService painelMedicoService;
+    @MockitoBean
     private PontuacaoService pontuacaoService;
     @MockitoBean
     private ProdutoService produtoService;
@@ -236,7 +248,8 @@ class MatrizAutorizacaoTest {
 
     private Object[] servicos() {
         return new Object[]{agendamentoService, authService, conteudoService, cupomService, empresaService, gestanteService,
-                medicoService, ofertaService, pontuacaoService, produtoService, promocaoService, resgateService,
+                medicoService, ofertaService, painelAdminService, painelEmpresaService, painelMedicoService,
+                pontuacaoService, produtoService, promocaoService, resgateService,
                 tipoAtendimentoService};
     }
 

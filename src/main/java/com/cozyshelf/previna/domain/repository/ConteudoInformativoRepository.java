@@ -35,4 +35,7 @@ public interface ConteudoInformativoRepository
             countQuery = "SELECT count(*) FROM conteudo_informativo WHERE publicado = TRUE",
             nativeQuery = true)
     Page<ConteudoInformativo> publicadosEmOrdemAleatoria(@Param("semente") String semente, Pageable pagina);
+
+    // Painel do admin: publicados (true) ou rascunhos (false)
+    long countByPublicado(boolean publicado);
 }
