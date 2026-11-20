@@ -323,6 +323,15 @@ class MatrizAutorizacaoTest {
         assertEquals(mapeadas, naMatriz);
     }
 
+    // GET /cupons/disponiveis foi substituída pelo catálogo GET /ofertas (D4). Com todos os controllers no ar e a
+    // gestante (quem a usava) autenticada, a rota não cai em nenhum outro mapeamento: 404, sem chegar a serviço
+    @Test
+    void cuponsDisponiveisNaoExisteMais() throws Exception {
+        mvc.perform(request(HttpMethod.GET, "/cupons/disponiveis").header("Authorization", token(GESTANTE)))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(servicos());
+    }
+
     private String token(Papel papel) {
         Usuario usuario = switch (papel) {
             case ANONIMO -> null;
