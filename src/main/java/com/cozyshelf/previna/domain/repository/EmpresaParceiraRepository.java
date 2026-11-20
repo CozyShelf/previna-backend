@@ -1,7 +1,10 @@
 package com.cozyshelf.previna.domain.repository;
 
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
+import com.cozyshelf.previna.domain.model.StatusConta;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -18,4 +21,10 @@ public interface EmpresaParceiraRepository extends JpaRepository<EmpresaParceira
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from EmpresaParceira e where e.id = :id")
     Optional<EmpresaParceira> findByIdParaAtualizar(@Param("id") Long id);
+
+    // ---- Painel do admin ----
+
+    long countByStatusConta(StatusConta statusConta);
+
+    Page<EmpresaParceira> findByStatusConta(StatusConta statusConta, Pageable pagina);
 }

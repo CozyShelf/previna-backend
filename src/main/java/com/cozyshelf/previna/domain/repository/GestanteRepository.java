@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.domain.repository;
 
 import com.cozyshelf.previna.domain.model.Gestante;
+import com.cozyshelf.previna.domain.model.StatusConta;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -43,4 +44,18 @@ public interface GestanteRepository extends JpaRepository<Gestante, Long>, JpaSp
     @Override
     @EntityGraph(attributePaths = "medico")
     Page<Gestante> findAll(Specification<Gestante> filtro, Pageable pagina);
+
+    // ---- Painel do médico ----
+
+    // Gestantes no alcance (:medico nulo = todas) sem nenhum agendamento AGENDADO, por nome; o id desempata
+    String SEM_PENDENTE = " from Gestante g where (:medico is null or g.medico.id = :medico)"
+            + " and not exists (select a.id from Agendamento a where a.gestante = g and a.status = "
+            + AgendamentoRepository.AGENDADO + ")";
+
+    @Query(value = "select g" + SEM_PENDENTE + " order by g.nome, g.id", countQuery = "select count(g)" + SEM_PENDENTE)
+    Page<Gestante> semAgendamentoPendente(@Param("medico") Long idMedico, Pageable pagina);
+
+    // ---- Painel do admin ----
+
+    long countByStatusConta(StatusConta statusConta);
 }

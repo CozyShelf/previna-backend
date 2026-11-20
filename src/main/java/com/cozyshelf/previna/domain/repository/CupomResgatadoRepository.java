@@ -4,6 +4,7 @@ import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.CupomResgatado;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
 import com.cozyshelf.previna.domain.model.TipoResgate;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -90,13 +92,17 @@ public interface CupomResgatadoRepository extends JpaRepository<CupomResgatado, 
     // O código da empresa: o de outra empresa não casa, como se não existisse
     String DA_EMPRESA = " where r.codigo = :codigo and r.empresaId = :empresa";
 
-    // ATIVO e dentro da validade (data_validade >= hoje: vale até o fim do dia, como em EXPIRAR) vira UTILIZADO num
+    // Aguardando uso: ATIVO e dentro da validade (data_validade >= hoje: vale até o fim do dia, o contrário de EXPIRAR).
+    // O vencido que ainda está ATIVO no banco (a expiração é feita na leitura) já não conta
+    String AGUARDANDO_USO = " r.status = " + ATIVO + " and r.dataValidade >= :hoje";
+
+    // ATIVO e dentro da validade (AGUARDANDO_USO) vira UTILIZADO num
     // UPDATE só, sem ler antes. Duas validações simultâneas do mesmo código: a segunda espera a trava de linha da
     // primeira, reavalia o WHERE (o status já não é ATIVO) e não muda nada. 1 = validado agora; 0 = inexistente, de
     // outra empresa, já usado ou vencido (quem chama relê para saber qual)
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update CupomResgatado r set r.status = " + UTILIZADO + ", r.dataUso = :agora" + DA_EMPRESA
-            + " and r.status = " + ATIVO + " and r.dataValidade >= :hoje")
+            + " and" + AGUARDANDO_USO)
     int utilizar(@Param("codigo") String codigo, @Param("empresa") Long idEmpresa, @Param("agora") LocalDateTime agora,
                  @Param("hoje") LocalDate hoje);
 
@@ -111,4 +117,17 @@ public interface CupomResgatadoRepository extends JpaRepository<CupomResgatado, 
     @Query("select new com.cozyshelf.previna.domain.repository.ResgateDaEmpresa(r, p.categoria, g.nome)"
             + " from CupomResgatado r join r.gestante g left join Produto p on p.id = r.produtoId" + DA_EMPRESA)
     Optional<ResgateDaEmpresa> daEmpresa(@Param("codigo") String codigo, @Param("empresa") Long idEmpresa);
+
+    // ---- Painel da empresa: cupons e promoções juntos ----
+
+    @Query("select count(r) from CupomResgatado r where r.empresaId = :empresa and" + AGUARDANDO_USO)
+    long contarAguardandoUso(@Param("empresa") Long idEmpresa, @Param("hoje") LocalDate hoje);
+
+    @Query("select count(r) from CupomResgatado r where r.empresaId = :empresa and r.status = " + UTILIZADO
+            + " and r.dataUso >= :desde")
+    long contarUtilizadosDesde(@Param("empresa") Long idEmpresa, @Param("desde") LocalDateTime desde);
+
+    // Os últimos validados, do mais recente; o id desempata
+    List<CupomResgatado> findByEmpresaIdAndStatusOrderByDataUsoDescIdDesc(Long empresaId, StatusCupomResgatado status,
+                                                                          Limit limite);
 }

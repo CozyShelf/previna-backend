@@ -69,6 +69,10 @@ public class Usuario {
         return perfil;
     }
 
+    public LocalDateTime getCriadoEm() {
+        return criadoEm;
+    }
+
     public boolean primeiroAcessoPendente() {
         return statusConta == StatusConta.PRIMEIRO_ACESSO_PENDENTE;
     }
