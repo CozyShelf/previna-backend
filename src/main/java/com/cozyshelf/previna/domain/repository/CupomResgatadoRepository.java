@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.Set;
@@ -30,6 +31,7 @@ public interface CupomResgatadoRepository extends JpaRepository<CupomResgatado, 
     // ---- Meus cupons (resgates da gestante) ----
 
     String ATIVO = "com.cozyshelf.previna.domain.model.StatusCupomResgatado.ATIVO";
+    String UTILIZADO = "com.cozyshelf.previna.domain.model.StatusCupomResgatado.UTILIZADO";
     String EXPIRADO = "com.cozyshelf.previna.domain.model.StatusCupomResgatado.EXPIRADO";
     String PROMOCAO = "com.cozyshelf.previna.domain.model.TipoResgate.PROMOCAO";
 
@@ -82,4 +84,31 @@ public interface CupomResgatadoRepository extends JpaRepository<CupomResgatado, 
     @Query("select new com.cozyshelf.previna.domain.repository.ResgateDaGestante(r, p.categoria)"
             + DA_GESTANTE + " and r.id = :id")
     Optional<ResgateDaGestante> daGestante(@Param("id") Long id, @Param("gestante") Long idGestante);
+
+    // ---- Validação do código na loja (empresa) ----
+
+    // O código da empresa: o de outra empresa não casa, como se não existisse
+    String DA_EMPRESA = " where r.codigo = :codigo and r.empresaId = :empresa";
+
+    // ATIVO e dentro da validade (data_validade >= hoje: vale até o fim do dia, como em EXPIRAR) vira UTILIZADO num
+    // UPDATE só, sem ler antes. Duas validações simultâneas do mesmo código: a segunda espera a trava de linha da
+    // primeira, reavalia o WHERE (o status já não é ATIVO) e não muda nada. 1 = validado agora; 0 = inexistente, de
+    // outra empresa, já usado ou vencido (quem chama relê para saber qual)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update CupomResgatado r set r.status = " + UTILIZADO + ", r.dataUso = :agora" + DA_EMPRESA
+            + " and r.status = " + ATIVO + " and r.dataValidade >= :hoje")
+    int utilizar(@Param("codigo") String codigo, @Param("empresa") Long idEmpresa, @Param("agora") LocalDateTime agora,
+                 @Param("hoje") LocalDate hoje);
+
+    // O vencido ainda ATIVO vira EXPIRADO, condicionado a ATIVO como o EXPIRAR da gestante
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update CupomResgatado r set r.status = " + EXPIRADO + DA_EMPRESA
+            + " and r.status = " + ATIVO + " and r.dataValidade < :hoje")
+    int expirarCodigoSeVencido(@Param("codigo") String codigo, @Param("empresa") Long idEmpresa,
+                               @Param("hoje") LocalDate hoje);
+
+    // Resgate, categoria do produto e nome da gestante numa consulta só
+    @Query("select new com.cozyshelf.previna.domain.repository.ResgateDaEmpresa(r, p.categoria, g.nome)"
+            + " from CupomResgatado r join r.gestante g left join Produto p on p.id = r.produtoId" + DA_EMPRESA)
+    Optional<ResgateDaEmpresa> daEmpresa(@Param("codigo") String codigo, @Param("empresa") Long idEmpresa);
 }
