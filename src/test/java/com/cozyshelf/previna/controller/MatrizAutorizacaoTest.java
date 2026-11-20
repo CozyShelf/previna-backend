@@ -188,6 +188,7 @@ class MatrizAutorizacaoTest {
                     {"produto":1,"desconto":10,"dataValidade":"%s","pontosNecessarios":100}"""
                     .formatted(LocalDate.now().plusDays(30))), EnumSet.of(EMPRESA_PARCEIRA)),
             Rota.put("/empresas/cupons/{id}/ativo", json("{\"ativo\":false}"), EnumSet.of(EMPRESA_PARCEIRA)),
+            Rota.post("/empresas/cupons/validar", json("{\"codigo\":\"AB12CD34\"}"), EnumSet.of(EMPRESA_PARCEIRA)),
 
             // Primeiro acesso: só com o token temporário do mesmo tipo de conta (a gestante não conclui o da empresa)
             Rota.putMultipart("/gestantes/primeiro-acesso", Map.of("novoLogin", "maria.silva",

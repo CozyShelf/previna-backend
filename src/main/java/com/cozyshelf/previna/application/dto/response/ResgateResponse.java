@@ -48,8 +48,9 @@ public record ResgateResponse(
                 resgate.getPontosGastos() == null ? 0 : resgate.getPontosGastos());
     }
 
-    // Como o dataResgate do CupomResgatadoResponse: a data e hora gravadas estão no fuso da JVM
-    private static Instant instante(LocalDateTime dataHora) {
+    // Como o dataResgate do CupomResgatadoResponse: a data e hora gravadas estão no fuso da JVM. Também na validação
+    // do código (ValidacaoCupomResponse e o dataUso do 409), para as datas saírem no mesmo formato
+    public static Instant instante(LocalDateTime dataHora) {
         return dataHora == null ? null : dataHora.atZone(ZoneId.systemDefault()).toInstant();
     }
 }

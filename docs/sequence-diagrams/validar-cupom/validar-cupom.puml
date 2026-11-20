@@ -5,56 +5,64 @@ autonumber
 actor "Gestante" as Gestante
 actor "Empresa Parceira" as Empresa
 boundary "Portal da Empresa" as Portal
-control "CupomController" as Controller
-participant "CupomService" as Service
+control "ValidacaoCupomController" as Controller
+participant "ResgateService" as Service
 database "Banco de Dados" as BD
 
 note over Empresa, Controller
     Requer empresa autenticada (perfil EMPRESA_PARCEIRA).
-    A empresa vem do token, não do caminho: uma empresa não valida cupons de outra.
+    A empresa vem do token, não do caminho: uma empresa não valida códigos de outra.
+    Vale para cupom e promoção resgatados (os dois ficam em cupom_resgatado).
 end note
 
-Gestante -> Empresa : Apresenta código/QR Code do cupom
+Gestante -> Empresa : Apresenta o código/QR Code do resgate
 Empresa -> Portal : Informa ou escaneia o código
-Portal -> Controller : POST /empresas/cupons/validar (codigo)
-Controller -> Service : validarCupom(codigo, idEmpresa do token)
-Service -> BD : buscarCupomResgatado(codigo)
-BD --> Service : cupom resgatado (com o cupom: empresa, produto, desconto, validade)
+Portal -> Controller : POST /empresas/cupons/validar {"codigo"}
 
-alt código não encontrado
-    Service --> Controller : Erro: cupom inexistente
-    Controller --> Portal : 404 Not Found
-    Portal --> Empresa : Exibe "Cupom inválido"
-else cupom de outra empresa
-    Service --> Controller : Erro: cupom inexistente
-    Controller --> Portal : 404 Not Found
-    Portal --> Empresa : Exibe "Cupom inválido"
-    note right of Controller
-        Mesma resposta do código inexistente,
-        para não revelar códigos de outras empresas
-    end note
-else cupom já UTILIZADO
-    Service --> Controller : Erro: cupom já utilizado (dataUso)
-    Controller --> Portal : 409 Conflict
-    Portal --> Empresa : Exibe "Cupom já utilizado em <data>"
-else cupom EXPIRADO (ou com a validade vencida)
-    Service -> BD : atualizarStatus(codigo, EXPIRADO)
-    Service --> Controller : Erro: cupom expirado
-    Controller --> Portal : 409 Conflict
-    Portal --> Empresa : Exibe "Cupom expirado"
-else cupom ATIVO e dentro da validade
-    Service -> BD : atualizarStatus(codigo, UTILIZADO, dataUso)\nsó se o status ainda for ATIVO
-    BD --> Service : ok
-    Service --> Controller : cupom validado
+alt código vazio ou em branco
+    Controller --> Portal : 400 Bad Request
+end
+
+Controller -> Service : validar(idEmpresa do token, codigo)
+Service -> Service : normaliza (sem espaços nas pontas, em maiúsculas)
+Service -> BD : UPDATE cupom_resgatado SET status = UTILIZADO, data_uso = :agora\nWHERE codigo = :codigo AND empresa_id = :empresa\nAND status = ATIVO AND data_validade >= :hoje
+BD --> Service : linhas alteradas
+
+alt 1 linha: validado agora
+    Service -> BD : lê o resgate (cópia, categoria do produto, nome da gestante)
+    Service --> Controller : ValidacaoCupomResponse
     Controller --> Portal : 200 OK
-    Portal --> Empresa : Exibe "Cupom validado" com o produto e o desconto
+    Portal --> Empresa : Exibe "Validado" com o produto ou título, o desconto e o nome da gestante
     Empresa --> Gestante : Aplica o desconto
+else 0 linhas: relê para dizer por quê
+    Service -> BD : lê o resgate pelo código e pela empresa do token
+    alt não encontrado (inexistente ou de outra empresa)
+        Service --> Controller : NaoEncontradoException(RESGATE_NAO_ENCONTRADO)
+        Controller --> Portal : 404 {"message", "codigo"}
+        note right of Controller
+            Mesma resposta para o inexistente e o de outra
+            empresa: não revela códigos de outras empresas
+        end note
+    else UTILIZADO
+        Service --> Controller : ConflitoException(RESGATE_JA_UTILIZADO, dataUso)
+        Controller --> Portal : 409 {"message", "codigo", "dataUso"}
+        Portal --> Empresa : Exibe "Já utilizado em <data>"
+    else EXPIRADO, ou ATIVO com a validade vencida
+        opt ATIVO vencido
+            Service -> BD : UPDATE ... SET status = EXPIRADO\nWHERE codigo = :codigo AND empresa_id = :empresa\nAND status = ATIVO AND data_validade < :hoje
+        end
+        Service --> Controller : ConflitoException(RESGATE_EXPIRADO)
+        Controller --> Portal : 409 {"message", "codigo"}
+        Portal --> Empresa : Exibe "Expirado"
+    end
 end
 
 note over Gestante, BD
-    A troca para UTILIZADO só acontece se o status ainda for ATIVO (UPDATE ... WHERE status = 'ATIVO'):
-    duas validações simultâneas do mesmo código não passam as duas.
-    Cupom já resgatado continua válido mesmo que a empresa desative o cupom depois: desativar só impede novos resgates.
+    Quem decide é o UPDATE condicionado a ATIVO, e não uma leitura antes: duas validações simultâneas do mesmo
+    código não passam as duas. A segunda espera a trava de linha da primeira, reavalia o WHERE (já não casa) e
+    recebe 409 RESGATE_JA_UTILIZADO com a dataUso da primeira. :agora e :hoje vêm da aplicação.
+    Vale a cópia do resgate (D2): cupom ou promoção desativados ou editados depois não invalidam o código.
+    Depois da validação, "meus cupons" (GET /gestantes/cupons/{id}) mostra UTILIZADO com a mesma dataUso.
 end note
 
 @enduml

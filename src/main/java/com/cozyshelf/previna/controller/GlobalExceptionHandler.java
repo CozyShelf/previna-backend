@@ -1,6 +1,7 @@
 package com.cozyshelf.previna.controller;
 
 import com.cozyshelf.previna.application.dto.response.Response;
+import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.DadosInvalidosException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
@@ -15,8 +16,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
     @ExceptionHandler(ConflitoException.class)
     public ResponseEntity<Response> conflito(ConflitoException e) {
-        String codigo = e.getCodigo() == null ? null : e.getCodigo().name();
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(new Response(e.getMessage(), codigo));
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new Response(e.getMessage(), nome(e.getCodigo()), e.getDataUso()));
     }
 
     @ExceptionHandler(DadosInvalidosException.class)
@@ -26,7 +27,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(NaoEncontradoException.class)
     public ResponseEntity<Response> naoEncontrado(NaoEncontradoException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new Response(e.getMessage()));
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new Response(e.getMessage(), nome(e.getCodigo())));
     }
 
     @ExceptionHandler(BadCredentialsException.class)
@@ -37,5 +38,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Response> dadosDuplicados() {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new Response("Dados já cadastrados"));
+    }
+
+    // O JSON leva o nome da constante; sem código, o campo não aparece
+    private static String nome(CodigoErro codigo) {
+        return codigo == null ? null : codigo.name();
     }
 }

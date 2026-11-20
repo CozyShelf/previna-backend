@@ -2,6 +2,9 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.ResgateRequest;
 import com.cozyshelf.previna.application.dto.response.ResgateResponse;
+import com.cozyshelf.previna.application.dto.response.ValidacaoCupomResponse;
+import com.cozyshelf.previna.application.exception.CodigoErro;
+import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.domain.Campos;
 import com.cozyshelf.previna.domain.model.Categoria;
@@ -14,8 +17,10 @@ import com.cozyshelf.previna.domain.model.Promocao;
 import com.cozyshelf.previna.domain.model.StatusCupomResgatado;
 import com.cozyshelf.previna.domain.model.TipoResgate;
 import com.cozyshelf.previna.domain.repository.CupomResgatadoRepository;
+import com.cozyshelf.previna.domain.repository.ResgateDaEmpresa;
 import com.cozyshelf.previna.domain.repository.ResgateDaGestante;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -187,5 +192,151 @@ class ResgateServiceTest {
         var erro = assertThrows(NaoEncontradoException.class, () -> service.detalhar(7L, 99L));
 
         assertEquals("Resgate não encontrado", erro.getMessage());
+    }
+
+    // ---- Validação do código na loja ----
+
+    private ResgateDaEmpresa lido(CupomResgatado resgate) {
+        return new ResgateDaEmpresa(resgate, Categoria.FRALDAS, "Maria");
+    }
+
+    private CupomResgatado comStatus(CupomResgatado resgate, StatusCupomResgatado status) {
+        return Campos.definir(resgate, "status", status);
+    }
+
+    @Test
+    void validaComOUpdateCondicionadoEOCodigoNormalizado() {
+        CupomResgatado resgate = comStatus(resgateDeCupom(), StatusCupomResgatado.UTILIZADO);
+        Campos.definir(resgate, "dataUso", LocalDateTime.of(2026, 11, 19, 11, 5));
+        when(repository.utilizar(eq("AB12CD34"), eq(3L), any(), eq(HOJE))).thenReturn(1);
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgate)));
+
+        ValidacaoCupomResponse validado = service.validar(3L, "  ab12cd34\t");
+
+        assertEquals(12L, validado.id());
+        assertEquals(TipoResgate.CUPOM, validado.tipo());
+        assertEquals("AB12CD34", validado.codigo());
+        assertNull(validado.titulo());
+        assertEquals("Fralda RN", validado.produtoNome());
+        assertEquals(Categoria.FRALDAS, validado.categoria());
+        assertEquals(new BigDecimal("10.00"), validado.desconto());
+        assertEquals(HOJE.plusDays(30), validado.validade());
+        assertEquals(LocalDateTime.of(2026, 11, 19, 11, 5).atZone(ZoneId.systemDefault()).toInstant(),
+                validado.dataUso());
+        assertEquals("Maria", validado.gestanteNome());
+        InOrder ordem = inOrder(repository);
+        ordem.verify(repository).utilizar(eq("AB12CD34"), eq(3L), any(), eq(HOJE));
+        ordem.verify(repository).daEmpresa("AB12CD34", 3L);
+        verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+    }
+
+    // A data de uso gravada é a hora da aplicação, e a data de hoje é a dela
+    @Test
+    void usaAHoraDaAplicacaoNoUpdate() {
+        when(repository.utilizar(any(), any(), any(), any())).thenReturn(1);
+        when(repository.daEmpresa(any(), any())).thenReturn(Optional.of(lido(resgateDeCupom())));
+        LocalDateTime antes = LocalDateTime.now();
+
+        service.validar(3L, "AB12CD34");
+
+        var agora = ArgumentCaptor.forClass(LocalDateTime.class);
+        var hoje = ArgumentCaptor.forClass(LocalDate.class);
+        verify(repository).utilizar(eq("AB12CD34"), eq(3L), agora.capture(), hoje.capture());
+        assertFalse(agora.getValue().isBefore(antes));
+        assertFalse(agora.getValue().isAfter(LocalDateTime.now()));
+        assertEquals(agora.getValue().toLocalDate(), hoje.getValue());
+    }
+
+    @Test
+    void promocaoValidadaVemComOTituloECategoriaCopiados() {
+        CupomResgatado resgate = resgateDePromocao();
+        when(repository.utilizar(any(), any(), any(), any())).thenReturn(1);
+        when(repository.daEmpresa("EF56GH78", 3L)).thenReturn(Optional.of(new ResgateDaEmpresa(resgate, null,
+                "Maria")));
+
+        ValidacaoCupomResponse validado = service.validar(3L, "EF56GH78");
+
+        assertEquals(TipoResgate.PROMOCAO, validado.tipo());
+        assertEquals("Semana do bebê", validado.titulo());
+        assertNull(validado.produtoNome());
+        assertEquals(Categoria.ROUPAS, validado.categoria());
+    }
+
+    // Inexistente ou de outra empresa: a consulta é sempre da empresa do token, então os dois casos são o mesmo vazio
+    @Test
+    void codigoQueNaoEDaEmpresaResponde404ComCodigo() {
+        when(repository.daEmpresa("ZZZZ9999", 3L)).thenReturn(Optional.empty());
+
+        var erro = assertThrows(NaoEncontradoException.class, () -> service.validar(3L, "zzzz9999"));
+
+        assertEquals("Código não encontrado", erro.getMessage());
+        assertEquals(CodigoErro.RESGATE_NAO_ENCONTRADO, erro.getCodigo());
+        verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+    }
+
+    @Test
+    void jaUtilizadoResponde409ComADataDeUso() {
+        CupomResgatado resgate = comStatus(resgateDeCupom(), StatusCupomResgatado.UTILIZADO);
+        Campos.definir(resgate, "dataUso", LocalDateTime.of(2026, 11, 19, 11, 5));
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgate)));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.validar(3L, "AB12CD34"));
+
+        assertEquals("Código já utilizado", erro.getMessage());
+        assertEquals(CodigoErro.RESGATE_JA_UTILIZADO, erro.getCodigo());
+        assertEquals(LocalDateTime.of(2026, 11, 19, 11, 5).atZone(ZoneId.systemDefault()).toInstant(),
+                erro.getDataUso());
+        verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+    }
+
+    @Test
+    void jaExpiradoResponde409SemGravarDeNovo() {
+        CupomResgatado resgate = comStatus(resgateDeCupom(), StatusCupomResgatado.EXPIRADO);
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgate)));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.validar(3L, "AB12CD34"));
+
+        assertEquals("Código expirado", erro.getMessage());
+        assertEquals(CodigoErro.RESGATE_EXPIRADO, erro.getCodigo());
+        assertNull(erro.getDataUso());
+        verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+    }
+
+    // Vencido e ainda ATIVO: o UPDATE não o validou; grava EXPIRADO (condicionado a ATIVO) antes de responder
+    @Test
+    void ativoVencidoGravaExpiradoEResponde409() {
+        CupomResgatado resgate = Campos.definir(resgateDeCupom(), "dataValidade", HOJE.minusDays(1));
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgate)));
+
+        var erro = assertThrows(ConflitoException.class, () -> service.validar(3L, "AB12CD34"));
+
+        assertEquals(CodigoErro.RESGATE_EXPIRADO, erro.getCodigo());
+        InOrder ordem = inOrder(repository);
+        ordem.verify(repository).utilizar(eq("AB12CD34"), eq(3L), any(), eq(HOJE));
+        ordem.verify(repository).daEmpresa("AB12CD34", 3L);
+        ordem.verify(repository).expirarCodigoSeVencido("AB12CD34", 3L, HOJE);
+    }
+
+    // O resgate só ficou visível depois do UPDATE (comitado entre os dois comandos): tenta o UPDATE de novo
+    @Test
+    void ativoValidoDepoisDoUpdateTentaDeNovo() {
+        CupomResgatado resgate = resgateDeCupom();
+        when(repository.utilizar(any(), any(), any(), any())).thenReturn(0, 1);
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgate)));
+
+        assertEquals(12L, service.validar(3L, "AB12CD34").id());
+
+        verify(repository, times(2)).utilizar(eq("AB12CD34"), eq(3L), any(), eq(HOJE));
+        verify(repository, never()).expirarCodigoSeVencido(any(), any(), any());
+    }
+
+    // Nunca deveria acontecer (os status não voltam a ATIVO): falha alto em vez de girar para sempre
+    @Test
+    void ativoValidoQueOUpdateNuncaPegaFalhaEmVezDeRepetirParaSempre() {
+        when(repository.daEmpresa("AB12CD34", 3L)).thenReturn(Optional.of(lido(resgateDeCupom())));
+
+        assertThrows(IllegalStateException.class, () -> service.validar(3L, "AB12CD34"));
+
+        verify(repository, times(2)).utilizar(any(), any(), any(), any());
     }
 }
