@@ -1,0 +1,71 @@
+@startuml painel-inicio
+title Painel da Tela Início (Médico, Empresa Parceira e Admin)
+autonumber
+
+actor "Usuário do portal" as Usuario
+boundary "Portal Previna" as Portal
+control "PainelController" as Controller
+participant "PainelMedicoService\nPainelEmpresaService\nPainelAdminService" as Service
+database "Banco de Dados" as BD
+
+note over Usuario, Controller
+    Cada rota só do seu perfil (@PreAuthorize): outro perfil recebe 403, sem token 401.
+    O médico e a empresa vêm do token, não do caminho. Só leitura: nada é gravado, nem no log de auditoria.
+    Cada número é um count no banco; cada lista curta é a página 0 de tamanho 5 (itens) com o count (total).
+end note
+
+Usuario -> Portal : Abre a tela Início
+
+alt perfil MEDICO
+    Portal -> Controller : GET /painel/medico
+    Controller -> Service : painel(idMedico do token)
+    Service -> BD : buscarMedico(idMedico)
+    BD --> Service : médico (verTodasGestantes)
+    note right of Service
+        Alcance: as gestantes do médico, ou todas com verTodasGestantes
+        (o mesmo da agenda do dia e da listagem de gestantes)
+    end note
+    Service -> BD : contarGestantes(alcance)
+    Service -> BD : pendentesAntesDe(alcance, hoje, 5 primeiros + count)
+    Service -> BD : pendentesEntre(alcance, amanhã, hoje + 7, 5 primeiros + count)
+    Service -> BD : gestantesSemAgendado(alcance, 5 primeiros por nome + count)
+    BD --> Service : contagens e listas curtas
+    Service --> Controller : gestantesAcompanhadas, atrasados, proximos7Dias, semAgendamentoPendente
+    Controller --> Portal : 200 OK
+else perfil EMPRESA_PARCEIRA
+    Portal -> Controller : GET /painel/empresa
+    Controller -> Service : painel(idEmpresa do token)
+    note right of Service
+        Tudo filtrado pela empresa do token. Critérios do catálogo /ofertas
+        (cupom válido, promoção vigente) e da validação na loja (ATIVO na validade)
+    end note
+    Service -> BD : contarCuponsValidos, contarPromocoesVigentes
+    Service -> BD : contarResgatesAguardandoUso(hoje), contarUtilizadosDesde(agora - 30 dias)
+    Service -> BD : cuponsVencendoAte(hoje + 7, 5 primeiros + count)
+    Service -> BD : produtosSemOferta(hoje, 5 primeiros por nome + count)
+    Service -> BD : ultimosUtilizados(5)
+    BD --> Service : contagens e listas curtas
+    Service --> Controller : cuponsAtivos, promocoesVigentes, resgatesAguardandoUso,\nvalidacoes30Dias, cuponsVencendo7Dias, produtosSemOferta, ultimasValidacoes
+    Controller --> Portal : 200 OK
+else perfil ADMIN
+    Portal -> Controller : GET /painel/admin
+    Controller -> Service : painel()
+    Service -> BD : contar médicos, empresas, gestantes (total e primeiro acesso pendente), conteúdos
+    Service -> BD : empresasPendentes(5 mais antigas por criado_em + count)
+    Service -> BD : logRecente(10 últimas linhas, com nome e perfil de quem fez)
+    note right of BD
+        Nenhum dado da gestante: sem gestante_id, e sem o nome
+        quando quem fez foi ela (perfil GESTANTE, usuarioNome nulo)
+    end note
+    BD --> Service : contagens, empresas e atividades
+    Service --> Controller : medicos, empresas, gestantes, conteudos,\nempresasPendentes, atividadeRecente
+    Controller --> Portal : 200 OK
+else perfil errado
+    Portal -> Controller : GET /painel/<outro perfil>
+    Controller --> Portal : 403 Forbidden (o serviço não é chamado)
+    Portal --> Usuario : Exibe o erro de acesso
+end
+
+Portal --> Usuario : Nos 200, exibe os números e as listas, com "e mais N" quando total > itens
+
+@enduml

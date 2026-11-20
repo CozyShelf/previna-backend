@@ -100,14 +100,16 @@ mvn test
   e falha se aparecer rota nova fora da matriz: ao criar um endpoint, adicione uma linha em `ROTAS`.
 - **Integração com PostgreSQL** (`ResgateCupomIntegracaoTest`, `CondicoesDeCorridaIntegracaoTest`,
   `RequisicoesSimultaneasHttpIntegracaoTest`, `FiltrosIntegracaoTest`, `OfertaIntegracaoTest`,
-  `CupomResgatadoIntegracaoTest`): duas requisições HTTP
+  `CupomResgatadoIntegracaoTest`, `LogAuditoriaIntegracaoTest`, `PainelIntegracaoTest`): duas requisições HTTP
   simultâneas de ponta a ponta (servidor numa porta aleatória, token JWT, filtro de segurança e controller) em que só
   uma tem efeito, a trava contra resgates simultâneos (`SELECT ... FOR UPDATE`), a
   idempotência do resgate, o saldo alterado só por `UPDATE` atômico, as travas do primeiro acesso e das edições, o
   agendamento pendente único (cadastros iguais simultâneos gravam um só), o resgate único da promoção e a promoção
   ativa sem sobreposição (resgates, cadastros e reativações simultâneos têm um efeito só), a expiração dos cupons
   resgatados na leitura (listagens simultâneas sem erro nem deadlock, e o `UTILIZADO` nunca desfeito), os filtros, a
-  ordem e a paginação de "meus cupons", o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
+  ordem e a paginação de "meus cupons", o rollback, a consulta por validade, a busca sem acento e as subconsultas do catálogo de ofertas, e os números do
+  painel da tela Início (limites de data, status, ordem e isolamento por médico e empresa; os globais por diferença numa
+  transação `REPEATABLE READ` desfeita no fim) só se provam no banco. Rodam só com a variável `PREVINA_TEST_DB_URL` apontando para um banco **descartável** (as migrações são
   aplicadas nele); sem ela, são pulados.
 
 No ambiente do `previna-development`:
