@@ -2,7 +2,6 @@ package com.cozyshelf.previna.application.service;
 
 import com.cozyshelf.previna.application.dto.request.CupomRequest;
 import com.cozyshelf.previna.application.dto.request.ExtratoRequest;
-import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.Cupom;
@@ -44,7 +43,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
-// Contra um PostgreSQL de verdade: a trava (SELECT ... FOR UPDATE), o rollback, a consulta por validade e o
+// Contra um PostgreSQL de verdade: a trava (SELECT ... FOR UPDATE), o rollback e o
 // carregamento do extrato só se provam no banco. Roda só com PREVINA_TEST_DB_URL apontando para um banco
 // descartável (as migrações são aplicadas nele); sem a variável, o teste é pulado. Ver README.
 @SpringBootTest
@@ -255,26 +254,6 @@ class ResgateCupomIntegracaoTest {
         var extrato = pontuacaoService.gerarExtrato(gestante.getId(), new ExtratoRequest(TipoTransacao.DEBITO, null, null));
         assertEquals("Cupom: 10% de desconto em Fralda RN", extrato.historico().getFirst().descricao());
         assertEquals(60, extrato.totalGasto());
-    }
-
-    @Test
-    void listaSoAtivosDentroDaValidadeIncluindoOsQueVencemHoje() {
-        Cupom vigente = cupom(30, LocalDate.now().plusDays(5));
-        Cupom venceHoje = cupom(20, LocalDate.now());
-        Cupom vencido = cupom(10, LocalDate.now().minusDays(1));
-        Cupom desativado = cupom(5, LocalDate.now().plusDays(5));
-        desativado.alterarAtivo(false);
-        cupomRepository.save(desativado);
-
-        List<Long> ids = cupomService.listarDisponiveis().stream()
-                .filter(c -> c.empresa().id().equals(empresa.getId()))
-                .map(CupomDisponivelResponse::id)
-                .toList();
-
-        // Os mais baratos primeiro
-        assertEquals(List.of(venceHoje.getId(), vigente.getId()), ids);
-        assertFalse(ids.contains(vencido.getId()));
-        assertFalse(ids.contains(desativado.getId()));
     }
 
     @Test

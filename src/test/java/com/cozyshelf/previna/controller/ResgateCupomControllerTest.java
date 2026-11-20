@@ -1,13 +1,11 @@
 package com.cozyshelf.previna.controller;
 
-import com.cozyshelf.previna.application.dto.response.CupomDisponivelResponse;
 import com.cozyshelf.previna.application.dto.response.CupomResgatadoResponse;
 import com.cozyshelf.previna.application.exception.CodigoErro;
 import com.cozyshelf.previna.application.exception.ConflitoException;
 import com.cozyshelf.previna.application.exception.NaoEncontradoException;
 import com.cozyshelf.previna.application.service.CupomService;
 import com.cozyshelf.previna.domain.Campos;
-import com.cozyshelf.previna.domain.model.Categoria;
 import com.cozyshelf.previna.domain.model.EmpresaParceira;
 import com.cozyshelf.previna.domain.model.Gestante;
 import com.cozyshelf.previna.domain.model.Medico;
@@ -31,12 +29,10 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Date;
-import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -92,8 +88,7 @@ class ResgateCupomControllerTest {
     // ---- Autenticação e perfil ----
 
     @Test
-    void semTokenNaoListaNemResgata() throws Exception {
-        mvc.perform(get("/cupons/disponiveis")).andExpect(status().isUnauthorized());
+    void semTokenNaoResgata() throws Exception {
         mvc.perform(post("/cupons/1/resgatar")).andExpect(status().isUnauthorized());
         verifyNoInteractions(cupomService);
     }
@@ -143,7 +138,6 @@ class ResgateCupomControllerTest {
         // Ainda com a senha temporária: o token só serve para concluir o primeiro acesso
         String temporario = token(gestante(7L, false));
 
-        mvc.perform(get("/cupons/disponiveis").header("Authorization", temporario)).andExpect(status().isForbidden());
         mvc.perform(post("/cupons/1/resgatar").header("Authorization", temporario)).andExpect(status().isForbidden());
         verifyNoInteractions(cupomService);
     }
@@ -161,8 +155,6 @@ class ResgateCupomControllerTest {
                 new EmpresaParceira("Farmácia Vida", "12345678000190", null, null, null, "vida", "hash"), "id", 3L),
                 "statusConta", StatusConta.ATIVA);
 
-        mvc.perform(get("/cupons/disponiveis").header("Authorization", token(empresa)))
-                .andExpect(status().isForbidden());
         mvc.perform(post("/cupons/1/resgatar").header("Authorization", token(empresa)))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(cupomService);
@@ -226,21 +218,6 @@ class ResgateCupomControllerTest {
         verifyNoInteractions(cupomService);
     }
 
-    @Test
-    void listaOsDisponiveis() throws Exception {
-        var empresa = new CupomDisponivelResponse.Empresa(3L, "Farmácia Vida", "Farmácia", "/empresas/3/logo?v=1");
-        when(cupomService.listarDisponiveis()).thenReturn(List.of(new CupomDisponivelResponse(1L,
-                "10% de desconto em Fralda RN", "Fralda RN", Categoria.FRALDAS, null, BigDecimal.TEN,
-                LocalDate.now().plusDays(10), 100, empresa)));
-
-        mvc.perform(get("/cupons/disponiveis").header("Authorization", tokenGestante(7L)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].empresa.nome").value("Farmácia Vida"))
-                .andExpect(jsonPath("$[0].pontosNecessarios").value(100))
-                // Nulos ficam fora do JSON (default-property-inclusion: non_null no application.yml)
-                .andExpect(jsonPath("$[0].empresa.cnpj").doesNotExist());
-    }
-
     // ---- Erros do diagrama: status e mensagem ----
 
     @Test
@@ -270,13 +247,6 @@ class ResgateCupomControllerTest {
     @ValueSource(strings = {"abc", "1.5", "1;DROP TABLE cupom", "99999999999999999999"})
     void idInvalidoNoCaminhoNaoChegaAoServico(String id) throws Exception {
         mvc.perform(post("/cupons/{id}/resgatar", id).header("Authorization", tokenGestante(7L)))
-                .andExpect(status().is4xxClientError());
-        verifyNoInteractions(cupomService);
-    }
-
-    @Test
-    void listarNaoAceitaPost() throws Exception {
-        mvc.perform(post("/cupons/disponiveis").header("Authorization", tokenGestante(7L)))
                 .andExpect(status().is4xxClientError());
         verifyNoInteractions(cupomService);
     }

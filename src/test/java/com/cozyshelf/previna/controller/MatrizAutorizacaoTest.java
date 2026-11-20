@@ -152,7 +152,6 @@ class MatrizAutorizacaoTest {
             Rota.put("/gestantes/tutorial-concluido", EnumSet.of(GESTANTE)),
             Rota.get("/gestantes/pontuacao", EnumSet.of(GESTANTE)),
             Rota.get("/gestantes/extrato", EnumSet.of(GESTANTE)),
-            Rota.get("/cupons/disponiveis", EnumSet.of(GESTANTE)),
             Rota.post("/cupons/{id}/resgatar", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas", EnumSet.of(GESTANTE)),
             Rota.get("/ofertas/empresas/{empresaId}/produtos", EnumSet.of(GESTANTE)),
